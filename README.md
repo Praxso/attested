@@ -42,8 +42,10 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
    ```
 
    ```bash
-   gh pr checks --watch --required
+   until gh pr checks 2>/dev/null | grep -q "attested verify"; do sleep 5; done; gh pr checks --watch --required
    ```
+
+   The loop waits for the checks to register; `gh pr checks --watch` exits with "no checks reported" if it runs in the first seconds after the PR opens.
 
    `attested verify` passes with a line like `PASS: sha256:... signed by Praxso/attested/.github/workflows/attested.yml ... head rule: source.headCommit == <your head sha> (pull_request run: source.commit <merge sha> is the synthetic merge commit)`. The `attested` check on the PR has the paste-able verify command. Close the PR with `gh pr close --delete-branch` when done.
 
