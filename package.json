@@ -1,0 +1,9 @@
+{
+  "name": "prove-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.24.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "pnpm --filter @praxso/prove build"
+  }
+}
