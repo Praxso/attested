@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { dirname, resolve } from 'node:path';
 import { DEFAULTS } from './constants.js';
 import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type ReceiptPredicate } from './receipt.js';
-import { AttestedError, classify, gitDirty, gitHead, gitRef, info, relPath, runUrl, sha256File, walk } from './util.js';
+import { AttestedError, classify, gitDirty, gitHead, gitRef, info, readEvent, relPath, runUrl, sha256File, walk } from './util.js';
 
 export type RunOptions = {
   command: string[];
@@ -116,7 +116,7 @@ export async function run(opts: RunOptions): Promise<number> {
 
   const predicate: ReceiptPredicate = {
     testResult,
-    source: { commit: head, dirty, ref: gitRef(cwd) },
+    source: { commit: head, headCommit: readEvent()?.pull_request?.head?.sha ?? null, dirty, ref: gitRef(cwd) },
     target,
     artifacts,
     tool: toolInfo(),

@@ -1,0 +1,37 @@
+name: attested verify
+description: Required check for attested test receipts. Verifies the Sigstore attestation, the head commit, and the result; fails closed.
+author: Praxso
+branding:
+  icon: check-circle
+  color: green
+inputs:
+  subject-path:
+    description: Path to the ctrf.json from the attested run's workflow artifact.
+    default: attested/ctrf.json
+  repo:
+    description: owner/repo whose attestation store holds the receipt.
+    default: ${{ github.repository }}
+  signer-workflow:
+    description: Workflow that must have signed the receipt, as owner/repo/.github/workflows/<file>.yml.
+    default: ${{ github.repository }}/.github/workflows/attested.yml
+  head-sha:
+    description: Commit the receipt must cover. Default is the PR head on pull_request, else github.sha.
+    default: ""
+  allow-unsigned:
+    description: Pass forked pull requests (no OIDC token, so no attestation) with a warning instead of failing.
+    default: "false"
+  github-token:
+    description: Token for gh (attestations read).
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        SUBJECT_PATH: ${{ inputs.subject-path }}
+        REPO: ${{ inputs.repo }}
+        SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        ALLOW_UNSIGNED: ${{ inputs.allow-unsigned }}
+      run: '"$GITHUB_ACTION_PATH/verify/verify.sh"'
