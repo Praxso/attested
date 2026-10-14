@@ -27,7 +27,7 @@ export function walk(dir: string): string[] {
   return out;
 }
 
-export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'report';
+export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'report' | 'packet';
 
 export function classify(path: string): ArtifactKind {
   const ext = extname(path).toLowerCase();
