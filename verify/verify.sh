@@ -53,7 +53,8 @@ if [ $STATUS -ne 0 ]; then
   if grep -qiE '404|no attestations? found' "$ERRF"; then
     [ "$FORK" = true ] && unsigned_fork
     # Lookup is by digest and type; ask the store what exists for this digest to tell the cases apart.
-    TYPES="$(gh api "repos/$REPO/attestations/sha256:$DIGEST" --jq '[.attestations[].bundle.dsseEnvelope.payload | @base64d | fromjson | .predicateType] | unique | join(", ")' 2>/dev/null || true)"
+    # gh api prints the 404 body on stdout, so only trust its output when it exits 0.
+    TYPES="$(gh api "repos/$REPO/attestations/sha256:$DIGEST" --jq '[.attestations[].bundle.dsseEnvelope.payload | @base64d | fromjson | .predicateType] | unique | join(", ")' 2>/dev/null)" || TYPES=""
     [ -n "$TYPES" ] && fail "predicate type mismatch: sha256:$DIGEST is attested only as $TYPES, not $PREDICATE_TYPE"
     fail "no attestation found for sha256:$DIGEST in $REPO (receipt was never signed)"
   fi
