@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -81,4 +81,25 @@ export function warn(msg: string): void {
 
 export function info(msg: string): void {
   process.stderr.write(`attested: ${msg}\n`);
+}
+
+export type GithubEvent = {
+  pull_request?: { number?: number; head?: { sha?: string; repo?: { full_name?: string } | null }; base?: { repo?: { full_name?: string } } };
+};
+
+// The webhook payload of the current workflow run, or null outside Actions.
+export function readEvent(): GithubEvent | null {
+  const path = process.env.GITHUB_EVENT_PATH;
+  if (!path || !existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as GithubEvent;
+  } catch {
+    return null;
+  }
+}
+
+// `owner/repo/.github/workflows/x.yml` from GITHUB_WORKFLOW_REF, the form `gh attestation verify --signer-workflow` takes.
+export function signerWorkflow(): string | null {
+  const ref = process.env.GITHUB_WORKFLOW_REF;
+  return ref ? ref.split('@')[0] : null;
 }
