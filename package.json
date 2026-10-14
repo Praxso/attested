@@ -2,8 +2,11 @@
   "name": "attested-monorepo",
   "private": true,
   "packageManager": "pnpm@10.24.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "pnpm --filter @praxso/attested build"
+    "build": "pnpm --filter @praxso/attested --filter @praxso/attested-mcp build",
+    "test": "pnpm --filter @praxso/attested --filter @praxso/attested-mcp test"
   }
 }

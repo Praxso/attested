@@ -46,9 +46,9 @@ jobs:
         working-directory: .
         run: pnpm build
 
-      - name: Test attested CLI
+      - name: Test attested CLI and MCP server
         working-directory: .
-        run: pnpm --filter @praxso/attested test
+        run: pnpm test
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium

@@ -1,0 +1,23 @@
+{
+  "name": "@praxso/attested-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for attested: run tests into a signed receipt, read the failure packet, check attestation status.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "mcpName": "io.github.Praxso/attested",
+  "repository": { "type": "git", "url": "https://github.com/Praxso/attested.git", "directory": "packages/mcp" },
+  "bin": { "attested-mcp": "./bin/attested-mcp.js" },
+  "files": ["bin", "dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@praxso/attested": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

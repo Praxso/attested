@@ -1,6 +1,7 @@
 node_modules/
 dist/
-attested/
+/attested/
+examples/*/attested/
 test-results/
 playwright-report/
 blob-report/
