@@ -1,0 +1,16 @@
+{
+  "name": "sample-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "playwright test",
+    "prove": "prove run -- pnpm exec playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@praxso/prove": "workspace:*",
+    "playwright-ctrf-json-reporter": "0.2.0"
+  }
+}
