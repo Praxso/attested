@@ -6,11 +6,11 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "playwright test",
-    "prove": "prove run -- pnpm exec playwright test"
+    "attested": "attested run -- pnpm exec playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
-    "@praxso/prove": "workspace:*",
+    "@praxso/attested": "workspace:*",
     "playwright-ctrf-json-reporter": "0.2.0"
   }
 }

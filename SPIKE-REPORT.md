@@ -187,8 +187,15 @@ Done; it cost about 10 minutes. `prove run` writes `prove/test-result.json` (pur
 
 ## Open decisions for Zach
 
+Resolved on 2026-10-14 in PR #3 (`Praxso/attested`), after the repo was renamed from `Praxso/prove`.
+
 1. **Final name.** `prove` collides with Perl's test harness on every Mac and Linux box (finding 1). Keep the name and accept that `prove` on PATH is ambiguous, or rename.
+   **Resolved:** renamed to `attested` (`@praxso/attested`, `attested run`, `attested attest`, output dir `attested/`, workflow `attested.yml`). The committed launcher stays because the pnpm shim gap is independent of the name.
 2. **Predicate URI domain.** `https://Praxso/prove/receipt/v0.1` is not a resolvable URL. Pick a real domain (for example `https://praxso.dev/prove/receipt/v0.1`) before anyone verifies against it in anger; it is a single constant in `packages/cli/src/constants.ts`.
+   **Resolved:** `https://praxso.ai/attested/v0.1`.
 3. **Keep the dual attestation?** It is cheap and lets any in-toto consumer read the result without knowing prove. Cost is one more signing step and two attestations per subject.
+   **Resolved:** kept. The custom predicate is authoritative; the in-toto Test Result attestation is a projection of it.
 4. **`--target-url` in M2.** It is implemented (`/healthz` probed, `sha` field recorded as `target.buildSha`, failure only warns). Decide whether a missing or mismatched build sha should fail closed.
+   **Resolved:** fail-closed. With the flag, an unreachable target, missing `sha`, or `sha` different from `--expect-sha` (or `HEAD`) exits 2 before tests run; without the flag no probe runs. Covered by `packages/cli/test/target-url.test.mjs`.
 5. **`signed` field semantics** (finding 3): drop it, or set it only after `actions/attest` succeeds.
+   **Resolved:** dropped, along with the companion `signing` object. `gh attestation verify` is the only answer to whether a receipt is signed.

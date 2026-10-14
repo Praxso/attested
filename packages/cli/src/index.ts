@@ -1,24 +1,24 @@
 
 import { attest, defaultAttestOptions } from './attest.js';
 import { defaultRunOptions, run } from './run.js';
-import { ProveError } from './util.js';
+import { AttestedError } from './util.js';
 import { TOOL_VERSION } from './constants.js';
 
-const USAGE = `prove ${TOOL_VERSION}
+const USAGE = `attested ${TOOL_VERSION}
 
 Usage:
-  prove run [options] -- <test command>
-  prove attest [options]
+  attested run [options] -- <test command>
+  attested attest [options]
 
 run options:
-  --ctrf <path>          CTRF report the test command writes (default prove/ctrf.json)
+  --ctrf <path>          CTRF report the test command writes (default attested/ctrf.json)
   --output-dir <dir>     Playwright output dir to hash (default test-results)
   --config <path>        test config file to record (default: playwright.config.*)
   --expect-sha <sha>     refuse to run unless HEAD equals <sha>
   --allow-dirty          allow a dirty working tree
-  --target-url <url>     probe <url>/healthz and record the result
+  --target-url <url>     fail before tests unless <url>/healthz reports sha == --expect-sha (or HEAD)
   --health-path <path>   health path for --target-url (default /healthz)
-  --receipt <path>       where to write the receipt (default prove/receipt.json)
+  --receipt <path>       where to write the receipt (default attested/receipt.json)
 
 attest options:
   --receipt <path>, --ctrf <path>
@@ -26,7 +26,7 @@ attest options:
 
 function takeValue(args: string[], i: number, flag: string): string {
   const v = args[i + 1];
-  if (v === undefined || v.startsWith('--')) throw new ProveError(`${flag} needs a value`);
+  if (v === undefined || v.startsWith('--')) throw new AttestedError(`${flag} needs a value`);
   return v;
 }
 
@@ -48,7 +48,7 @@ async function main(argv: string[]): Promise<number> {
       else if (a === '--target-url') o.targetUrl = takeValue(rest, i++, a);
       else if (a === '--health-path') o.healthPath = takeValue(rest, i++, a);
       else if (a === '--receipt') o.receipt = takeValue(rest, i++, a);
-      else throw new ProveError(`unknown option ${a}`);
+      else throw new AttestedError(`unknown option ${a}`);
     }
     return run(o);
   }
@@ -58,17 +58,17 @@ async function main(argv: string[]): Promise<number> {
       const a = rest[i];
       if (a === '--receipt') o.receipt = takeValue(rest, i++, a);
       else if (a === '--ctrf') o.ctrf = takeValue(rest, i++, a);
-      else throw new ProveError(`unknown option ${a}`);
+      else throw new AttestedError(`unknown option ${a}`);
     }
     return attest(o);
   }
-  throw new ProveError(`unknown command ${cmd}\n${USAGE}`);
+  throw new AttestedError(`unknown command ${cmd}\n${USAGE}`);
 }
 
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
-    process.stderr.write(`prove: error: ${err instanceof ProveError ? err.message : (err as Error).stack}\n`);
-    process.exit(err instanceof ProveError ? 2 : 1);
+    process.stderr.write(`attested: error: ${err instanceof AttestedError ? err.message : (err as Error).stack}\n`);
+    process.exit(err instanceof AttestedError ? 2 : 1);
   },
 );

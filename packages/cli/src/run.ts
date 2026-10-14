@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { dirname, resolve } from 'node:path';
 import { DEFAULTS } from './constants.js';
 import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type ReceiptPredicate } from './receipt.js';
-import { ProveError, classify, gitDirty, gitHead, gitRef, info, relPath, runUrl, sha256File, walk, warn } from './util.js';
+import { AttestedError, classify, gitDirty, gitHead, gitRef, info, relPath, runUrl, sha256File, walk } from './util.js';
 
 export type RunOptions = {
   command: string[];
@@ -35,35 +35,53 @@ export function defaultRunOptions(): RunOptions {
   };
 }
 
-async function probeTarget(url: string, healthPath: string): Promise<{ buildSha: string | null; url: string; health: unknown }> {
+type Target = { buildSha: string | null; url: string | null; health?: unknown };
+
+// Probe <url><healthPath> and require a `sha` field equal to expectedSha. Any failure is fatal:
+// a receipt must not claim tests ran against a deployment it cannot identify.
+async function probeTarget(url: string, healthPath: string, expectedSha: string): Promise<Target> {
   const target = new URL(healthPath, url).toString();
+  let res: Response;
+  let text: string;
   try {
-    const res = await fetch(target, { signal: AbortSignal.timeout(5000) });
-    const text = await res.text();
-    let body: unknown = text;
-    try { body = JSON.parse(text); } catch { /* keep text */ }
-    const buildSha = typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).sha === 'string'
-      ? ((body as Record<string, string>).sha) : null;
-    return { buildSha, url, health: { probed: target, status: res.status, body } };
+    res = await fetch(target, { signal: AbortSignal.timeout(5000) });
+    text = await res.text();
   } catch (err) {
-    warn(`target probe of ${target} failed: ${(err as Error).message}`);
-    return { buildSha: null, url, health: { probed: target, error: (err as Error).message } };
+    throw new AttestedError(`attested run: target ${target} is unreachable (${(err as Error).message}); refusing to run tests`);
   }
+  if (!res.ok) throw new AttestedError(`attested run: target ${target} returned HTTP ${res.status}; refusing to run tests`);
+  let body: unknown = text;
+  try { body = JSON.parse(text); } catch { /* keep text */ }
+  const buildSha = typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).sha === 'string'
+    ? ((body as Record<string, string>).sha) : null;
+  if (!buildSha) throw new AttestedError(`attested run: target ${target} did not report a build sha (expected JSON with a "sha" field); refusing to run tests`);
+  if (buildSha !== expectedSha) {
+    throw new AttestedError(`attested run: target ${target} is built from ${buildSha}, expected ${expectedSha}; refusing to run tests`);
+  }
+  return { buildSha, url, health: { probed: target, status: res.status, body } };
 }
 
 export async function run(opts: RunOptions): Promise<number> {
   const cwd = process.cwd();
-  if (opts.command.length === 0) throw new ProveError('prove run: no test command given (use `prove run -- <command>`)');
+  if (opts.command.length === 0) throw new AttestedError('attested run: no test command given (use `attested run -- <command>`)');
 
   // Fail-closed checks happen before any test runs.
   const head = gitHead(cwd);
   if (opts.expectSha) {
-    if (!head) throw new ProveError('prove run: --expect-sha given but HEAD could not be resolved');
-    if (head !== opts.expectSha) throw new ProveError(`prove run: HEAD is ${head}, expected ${opts.expectSha}; refusing to run tests`);
+    if (!head) throw new AttestedError('attested run: --expect-sha given but HEAD could not be resolved');
+    if (head !== opts.expectSha) throw new AttestedError(`attested run: HEAD is ${head}, expected ${opts.expectSha}; refusing to run tests`);
   }
   const dirty = gitDirty(cwd);
   if (dirty && !opts.allowDirty) {
-    throw new ProveError('prove run: working tree is dirty; commit or pass --allow-dirty');
+    throw new AttestedError('attested run: working tree is dirty; commit or pass --allow-dirty');
+  }
+  // --target-url is fail-closed: the deployment must report the sha we are about to test.
+  let target: Target = { buildSha: null, url: null };
+  if (opts.targetUrl) {
+    const expected = opts.expectSha ?? head;
+    if (!expected) throw new AttestedError('attested run: --target-url needs --expect-sha or a git HEAD to compare the build sha against');
+    target = await probeTarget(opts.targetUrl, opts.healthPath, expected);
+    info(`target ${opts.targetUrl} reports build ${target.buildSha}`);
   }
 
   const ctrfPath = resolve(cwd, opts.ctrf);
@@ -77,10 +95,10 @@ export async function run(opts: RunOptions): Promise<number> {
   info(`test command exited with ${exitCode}`);
 
   if (!existsSync(ctrfPath)) {
-    throw new ProveError(`prove run: CTRF report not found at ${opts.ctrf} (configure the CTRF reporter or pass --ctrf)`);
+    throw new AttestedError(`attested run: CTRF report not found at ${opts.ctrf} (configure the CTRF reporter or pass --ctrf)`);
   }
   const ctrf = JSON.parse(readFileSync(ctrfPath, 'utf8')) as Ctrf;
-  if (!ctrf.results) throw new ProveError(`prove run: ${opts.ctrf} is not a CTRF report (missing "results")`);
+  if (!ctrf.results) throw new AttestedError(`attested run: ${opts.ctrf} is not a CTRF report (missing "results")`);
 
   const subject = sha256File(ctrfPath);
   const artifacts: Artifact[] = [{ path: relPath(cwd, ctrfPath), ...subject, kind: 'report' }];
@@ -95,7 +113,6 @@ export async function run(opts: RunOptions): Promise<number> {
 
   const url = runUrl();
   const testResult = testResultFromCtrf(ctrf, configuration, url);
-  const target = opts.targetUrl ? await probeTarget(opts.targetUrl, opts.healthPath) : { buildSha: null, url: null };
 
   const predicate: ReceiptPredicate = {
     testResult,

@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-export class ProveError extends Error {}
+export class AttestedError extends Error {}
 
 export function sha256File(path: string): { sha256: string; bytes: number } {
   const buf = readFileSync(path);
@@ -76,9 +76,9 @@ export function runUrl(): string | null {
 }
 
 export function warn(msg: string): void {
-  process.stderr.write(`prove: warning: ${msg}\n`);
+  process.stderr.write(`attested: warning: ${msg}\n`);
 }
 
 export function info(msg: string): void {
-  process.stderr.write(`prove: ${msg}\n`);
+  process.stderr.write(`attested: ${msg}\n`);
 }
