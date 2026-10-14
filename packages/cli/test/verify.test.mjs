@@ -25,7 +25,7 @@ if [ "$1" = attestation ]; then
   if [ -n "$STUB_VERIFY_ERR" ]; then echo "$STUB_VERIFY_ERR" >&2; exit 1; fi
   echo "$STUB_VERIFY_OUT"; exit 0
 fi
-if [ "$1" = api ]; then printf '%s' "$STUB_API_OUT"; exit 0; fi
+if [ "$1" = api ]; then printf '%s' "$STUB_API_OUT"; exit "\${STUB_API_EXIT:-0}"; fi
 exit 9
 `);
   chmodSync(join(dir, 'bin', 'gh'), 0o755);
@@ -63,6 +63,12 @@ test('no attestation (404) fails', () => {
   const r = setup({ verifyErr: 'Error: HTTP 404: Not Found' })();
   assert.equal(r.code, 1);
   assert.match(r.out, /FAIL: no attestation found for sha256:[0-9a-f]{64} in o\/r/);
+});
+
+test('no attestation stays "no attestation" when the attestations API itself 404s', () => {
+  const r = setup({ verifyErr: 'Error: HTTP 404: Not Found', apiOut: '{"message":"Not Found","status":"404"}' })({ STUB_API_EXIT: '1' });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: no attestation found for sha256:/);
 });
 
 test('predicate type mismatch is named when the digest is attested under another type', () => {
