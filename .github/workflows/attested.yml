@@ -15,9 +15,12 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  checks: write
 
 jobs:
-  attested:
+  # Job is named "attested run" so its own check does not collide with the "attested" check run that `attested check` posts.
+  run:
+    name: attested run
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -81,6 +84,7 @@ jobs:
           show-summary: false
 
       - name: Upload Playwright artifacts and receipt
+        id: upload
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -107,3 +111,11 @@ jobs:
             echo "- test-result attestation: $URL2"
             echo "- subject \`ctrf.json\` sha256 \`$SHA256\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: attested check
+        if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
+        run: pnpm exec attested check --artifact-url "$ARTIFACT_URL" --artifact-name "attested-$GITHUB_SHA" --attestation-url "$ATTESTATION_URL"

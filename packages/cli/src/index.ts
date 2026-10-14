@@ -1,5 +1,6 @@
 
 import { attest, defaultAttestOptions } from './attest.js';
+import { check, defaultCheckOptions } from './check.js';
 import { defaultRunOptions, run } from './run.js';
 import { AttestedError } from './util.js';
 import { TOOL_VERSION } from './constants.js';
@@ -9,6 +10,7 @@ const USAGE = `attested ${TOOL_VERSION}
 Usage:
   attested run [options] -- <test command>
   attested attest [options]
+  attested check [options]
 
 run options:
   --ctrf <path>          CTRF report the test command writes (default attested/ctrf.json)
@@ -22,12 +24,25 @@ run options:
 
 attest options:
   --receipt <path>, --ctrf <path>
+
+check options (posts the "attested" check run; needs GITHUB_TOKEN with checks: write):
+  --artifact-url <url>       link to the uploaded workflow artifact
+  --artifact-name <name>     workflow artifact name, for the paste-able verify command
+  --attestation-url <url>    link to the receipt attestation
+  --receipt <path>, --packet <path>
 `;
 
 function takeValue(args: string[], i: number, flag: string): string {
   const v = args[i + 1];
   if (v === undefined || v.startsWith('--')) throw new AttestedError(`${flag} needs a value`);
   return v;
+}
+
+// Like takeValue, but an empty string (an unset workflow output) means "not given".
+function optValue(args: string[], i: number, flag: string): string | null {
+  const v = args[i + 1];
+  if (v === undefined) throw new AttestedError(`${flag} needs a value`);
+  return v === '' ? null : v;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -61,6 +76,19 @@ async function main(argv: string[]): Promise<number> {
       else throw new AttestedError(`unknown option ${a}`);
     }
     return attest(o);
+  }
+  if (cmd === 'check') {
+    const o = defaultCheckOptions();
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === '--receipt') o.receipt = takeValue(rest, i++, a);
+      else if (a === '--packet') o.packet = takeValue(rest, i++, a);
+      else if (a === '--artifact-url') o.artifactUrl = optValue(rest, i++, a);
+      else if (a === '--artifact-name') o.artifactName = optValue(rest, i++, a);
+      else if (a === '--attestation-url') o.attestationUrl = optValue(rest, i++, a);
+      else throw new AttestedError(`unknown option ${a}`);
+    }
+    return check(o);
   }
   throw new AttestedError(`unknown command ${cmd}\n${USAGE}`);
 }

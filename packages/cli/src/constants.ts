@@ -12,5 +12,6 @@ export const DEFAULTS = {
   receipt: 'attested/receipt.json',
   predicate: 'attested/predicate.json',
   testResultPredicate: 'attested/test-result.json',
+  packet: 'attested/packet.json',
   healthPath: '/healthz',
 };
