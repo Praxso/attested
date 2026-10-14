@@ -50,12 +50,12 @@ export function buildSummary(receipt: Receipt, packet: string | null, opts: Chec
   const title = `${tr.result}: ${counts}`;
   lines.push(`### ${TOOL_NAME}: ${tr.result}`, '', '| | |', '|---|---|');
   lines.push(`| Verdict | **${tr.result}** |`);
-  const head = (p.source as { headCommit?: string | null }).headCommit;
+  const head = p.source.headCommit;
   lines.push(`| Commit tested | \`${p.source.commit ?? 'unknown'}\`${head && head !== p.source.commit ? ` (PR head \`${head}\`)` : ''} |`);
   lines.push(`| Target build | ${p.target.buildSha ? `\`${p.target.buildSha}\` at ${p.target.url}` : 'none (no --target-url)'} |`);
   lines.push(`| Tests | ${counts} |`);
   lines.push(`| Subject | \`ctrf.json\` sha256 \`${digest}\` |`);
-  lines.push(`| Evidence | ${opts.artifactUrl ? `[workflow artifact](${opts.artifactUrl})` : 'workflow artifact'} (repo-private: traces, videos, screenshots; never posted here) |`);
+  lines.push(`| Evidence | ${opts.artifactUrl ? `[workflow artifact](${opts.artifactUrl})` : 'workflow artifact'} (traces, videos, screenshots; access follows this repository's visibility; never posted to the PR) |`);
   if (opts.attestationUrl) lines.push(`| Attestation | ${opts.attestationUrl} |`);
   const url = runUrl();
   if (url) lines.push(`| Run | ${url} |`);
