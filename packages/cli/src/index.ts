@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+
 import { attest, defaultAttestOptions } from './attest.js';
 import { defaultRunOptions, run } from './run.js';
 import { ProveError } from './util.js';

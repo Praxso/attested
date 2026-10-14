@@ -4,10 +4,10 @@
   "description": "Turn a Playwright run into a signed, verifiable test receipt.",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "prove": "./dist/index.js" },
-  "files": ["dist"],
+  "bin": { "prove": "./bin/prove.js" },
+  "files": ["bin", "dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/index.js"
+    "build": "tsc -p tsconfig.json"
   },
   "engines": { "node": ">=22" },
   "devDependencies": {
