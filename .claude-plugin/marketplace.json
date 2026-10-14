@@ -1,0 +1,15 @@
+{
+  "name": "praxso",
+  "description": "Praxso plugins: attested, signed test receipts for agent-authored pull requests.",
+  "owner": {
+    "name": "Praxso",
+    "url": "https://github.com/Praxso"
+  },
+  "plugins": [
+    {
+      "name": "attested",
+      "source": "./plugins/attested",
+      "description": "Run tests into a Sigstore-signed receipt before opening a PR; read a redacted failure packet on red, fix, rerun."
+    }
+  ]
+}
