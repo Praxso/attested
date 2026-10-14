@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DEFAULTS } from './constants.js';
+import { buildPacket, rerunCommand, serializePacket } from './packet.js';
 import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type ReceiptPredicate } from './receipt.js';
 import { AttestedError, classify, gitDirty, gitHead, gitRef, info, readEvent, relPath, runUrl, sha256File, walk } from './util.js';
 
@@ -17,6 +18,8 @@ export type RunOptions = {
   allowDirty: boolean;
   targetUrl: string | null;
   healthPath: string;
+  packet: string;
+  argv: string[];
 };
 
 export function defaultRunOptions(): RunOptions {
@@ -32,6 +35,8 @@ export function defaultRunOptions(): RunOptions {
     allowDirty: false,
     targetUrl: null,
     healthPath: DEFAULTS.healthPath,
+    packet: DEFAULTS.packet,
+    argv: [],
   };
 }
 
@@ -113,6 +118,17 @@ export async function run(opts: RunOptions): Promise<number> {
 
   const url = runUrl();
   const testResult = testResultFromCtrf(ctrf, configuration, url);
+
+  // On red, write the failure packet and record its digest next to the evidence it points at.
+  const packetPath = resolve(cwd, opts.packet);
+  rmSync(packetPath, { force: true });
+  if (testResult.result === 'FAILED') {
+    const packet = buildPacket(ctrf, artifacts, cwd, rerunCommand(opts.argv));
+    mkdirSync(dirname(packetPath), { recursive: true });
+    writeFileSync(packetPath, serializePacket(packet));
+    artifacts.push({ path: relPath(cwd, packetPath), ...sha256File(packetPath), kind: 'packet' });
+    info(`failure packet: ${opts.packet} (${packet.failingTests.length} failure groups${packet.truncated ? ', truncated' : ''})`);
+  }
 
   const predicate: ReceiptPredicate = {
     testResult,

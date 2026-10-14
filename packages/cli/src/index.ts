@@ -21,6 +21,7 @@ run options:
   --target-url <url>     fail before tests unless <url>/healthz reports sha == --expect-sha (or HEAD)
   --health-path <path>   health path for --target-url (default /healthz)
   --receipt <path>       where to write the receipt (default attested/receipt.json)
+  --packet <path>        where to write the failure packet on red (default attested/packet.json)
 
 attest options:
   --receipt <path>, --ctrf <path>
@@ -52,6 +53,7 @@ async function main(argv: string[]): Promise<number> {
 
   if (cmd === 'run') {
     const o = defaultRunOptions();
+    o.argv = argv;
     for (let i = 0; i < rest.length; i++) {
       const a = rest[i];
       if (a === '--') { o.command = rest.slice(i + 1); break; }
@@ -63,6 +65,7 @@ async function main(argv: string[]): Promise<number> {
       else if (a === '--target-url') o.targetUrl = takeValue(rest, i++, a);
       else if (a === '--health-path') o.healthPath = takeValue(rest, i++, a);
       else if (a === '--receipt') o.receipt = takeValue(rest, i++, a);
+      else if (a === '--packet') o.packet = takeValue(rest, i++, a);
       else throw new AttestedError(`unknown option ${a}`);
     }
     return run(o);
