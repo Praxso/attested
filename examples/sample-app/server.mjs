@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT ?? 4173);
-const broken = process.env.PROVE_SAMPLE_BREAK === '1';
+const broken = process.env.ATTESTED_SAMPLE_BREAK === '1';
 const sha = process.env.GITHUB_SHA ?? 'dev';
 
 createServer((req, res) => {

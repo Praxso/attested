@@ -27,8 +27,6 @@ export type Receipt = {
   subject: Array<{ name: string; digest: { sha256: string } }>;
   predicateType: string;
   predicate: ReceiptPredicate;
-  signed: boolean;
-  signing: { mode: string; note: string };
 };
 
 export type Ctrf = {
@@ -66,8 +64,6 @@ export function buildReceipt(subjectSha256: string, predicate: ReceiptPredicate)
     subject: [{ name: SUBJECT_NAME, digest: { sha256: subjectSha256 } }],
     predicateType: PREDICATE_TYPE,
     predicate,
-    signed: false,
-    signing: { mode: 'none', note: 'run `prove attest` to sign' },
   };
 }
 

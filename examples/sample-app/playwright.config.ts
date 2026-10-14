@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ['list'],
-    ['playwright-ctrf-json-reporter', { outputDir: 'prove', outputFile: 'ctrf.json' }],
+    ['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }],
   ],
   use: {
     baseURL: 'http://localhost:4173',

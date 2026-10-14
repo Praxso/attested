@@ -1,13 +1,14 @@
 {
-  "name": "@praxso/prove",
+  "name": "@praxso/attested",
   "version": "0.1.0",
   "description": "Turn a Playwright run into a signed, verifiable test receipt.",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "prove": "./bin/prove.js" },
+  "bin": { "attested": "./bin/attested.js" },
   "files": ["bin", "dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
   },
   "engines": { "node": ">=22" },
   "devDependencies": {
