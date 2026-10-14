@@ -131,6 +131,7 @@ jobs:
     permissions:
       contents: read
       attestations: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,7 +141,10 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: attested-${{ github.sha }}
+          # exit test 3: replay the signed green receipt from main's push run instead of this PR's own
+          name: attested-41ce398d2094cdcdd254b4ba30e6e4ad802a3d17
+          run-id: 38654541450
+          github-token: ${{ github.token }}
           path: receipt
 
       - name: attested verify
