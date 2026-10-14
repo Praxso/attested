@@ -1,0 +1,13 @@
+--- a/README.md
++++ b/README.md
+@@ -819,6 +819,10 @@
+   }
+ }
+ ```
++
++## Related tools
++
++- [attested](https://github.com/Praxso/attested): an MCP server and GitHub check that turn a Playwright run into a Sigstore-signed test receipt. Agents get a redacted failure packet on red; traces, videos, and screenshots stay in the workflow artifact instead of being posted to the pull request.
+ 
+ ## Security
+ 

@@ -1,0 +1,10 @@
+--- a/README.md
++++ b/README.md
+@@ -69,6 +69,7 @@
+ The CTRF ecosystem includes community built integrations for popular testing frameworks and developer tools.
+ 
+ - [View integrations](https://ctrf.io/integrations)
++- [attested](https://github.com/Praxso/attested): turns a CTRF report into a Sigstore-signed test receipt through GitHub artifact attestations, with a required `attested verify` check for pull requests
+ 
+ ## Adopters
+ 

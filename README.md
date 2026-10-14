@@ -1,21 +1,25 @@
 # attested
 
-Signed, verifiable test receipts for agent-authored changes.
+Signed, verifiable test receipts for agent-authored pull requests.
 
-`attested` wraps an ordinary Playwright run and turns it into a receipt: an
-[in-toto Statement](https://github.com/in-toto/attestation) whose subject is the
-[CTRF](https://ctrf.io) test report and whose predicate records the result, the
-failing tests, the source commit, and the sha256 of every trace, video, and
-screenshot. In GitHub Actions the receipt is signed with Sigstore keyless
-signing through `actions/attest`, so anyone can verify it with `gh attestation verify`.
-No custom runner, no custom signing, no hosted service.
+`attested` wraps an ordinary Playwright run, or any test run that writes a [CTRF](https://ctrf.io) report, and turns it into a receipt: an [in-toto Statement](https://github.com/in-toto/attestation) whose subject is the CTRF report and whose predicate records the result, the failing tests, the commit, and the sha256 of every trace, video, and screenshot. In GitHub Actions the receipt is signed with Sigstore keyless signing through `actions/attest`. A pull request then carries two things:
 
-Status: M1 spike complete. See [docs/spikes/m1-brief.md](docs/spikes/m1-brief.md) and
-[SPIKE-REPORT.md](SPIKE-REPORT.md).
+- the **`attested` check**, which a human reads: verdict, commit, counts, the command to verify it, a link to the evidence, and on red a redacted failure packet;
+- the **`attested verify` check**, which a ruleset requires: it fails closed unless a signed receipt exists for the PR head and says the tests passed.
 
-## From clone to a verified receipt
+No custom runner, no hosted service, no images posted anywhere.
 
-Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or newer, logged in (`gh auth login`).
+Status: M2. See [docs/spikes/m2-brief.md](docs/spikes/m2-brief.md), [M2-REPORT.md](M2-REPORT.md), and for M1 [SPIKE-REPORT.md](SPIKE-REPORT.md).
+
+## Why not just screenshots
+
+On 2026-09-30 Help Net Security reported [PixelLeak](https://www.helpnetsecurity.com/2026/09/30/ai-coding-agents-github-screenshot-leak/): Glow Labs found more than 13,000 internal screenshots that AI coding agents had pushed to public GitHub repositories while trying to show reviewers a UI fix. Pull request image upload only works in the browser, so command-line agents put the images somewhere they could link to.
+
+A screenshot is also weak evidence: it shows one moment, says nothing about which commit produced it, and can be produced by anything. `attested` gives reviewers a signed statement of which tests ran against which commit and what happened. The traces, videos, and screenshots stay in the workflow artifact of the run that produced them, and only their sha256 digests travel in the receipt. `attested check` never uses the check-run `images` field and posts text only. See [SECURITY.md](SECURITY.md).
+
+## From a fresh clone to a passing `attested verify` on a PR
+
+Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or newer, logged in (`gh auth login`), and write access to this repository (for your own repository, use [Use it in your repository](#use-it-in-your-repository) instead).
 
 1. Clone and build.
 
@@ -26,12 +30,24 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 2. Run the sample tests locally and produce an unsigned receipt.
 
    ```bash
-   cd examples/sample-app && pnpm exec playwright install chromium && pnpm exec attested run --allow-dirty -- pnpm exec playwright test && pnpm exec attested attest
+   cd examples/sample-app && pnpm exec playwright install chromium && pnpm exec attested run --allow-dirty -- pnpm exec playwright test && cd ../..
    ```
 
-   `attested/receipt.json` now holds the statement and a warning was printed. Signing needs the workflow OIDC identity, so it only happens in Actions.
+   `examples/sample-app/attested/receipt.json` now holds the statement. Run it with `ATTESTED_SAMPLE_BREAK=1` in front to see a red run and `attested/packet.json`.
 
-3. Verify a signed receipt from the latest run on `main`. Download the workflow artifact, which contains the exact `ctrf.json` that was signed, then verify it against GitHub's attestation store.
+3. Open a pull request and wait for the checks.
+
+   ```bash
+   git checkout -b try-attested-$(date +%s) && git commit --allow-empty -m "try attested" && git push -u origin HEAD && gh pr create --fill --draft
+   ```
+
+   ```bash
+   gh pr checks --watch --required
+   ```
+
+   `attested verify` passes with a line like `PASS: sha256:... signed by Praxso/attested/.github/workflows/attested.yml ... head rule: source.headCommit == <your head sha> (pull_request run: source.commit <merge sha> is the synthetic merge commit)`. The `attested` check on the PR has the paste-able verify command. Close the PR with `gh pr close --delete-branch` when done.
+
+4. Optional: verify a receipt yourself, online or offline.
 
    ```bash
    gh run download --repo Praxso/attested --name "attested-$(gh api repos/Praxso/attested/commits/main -q .sha)" --dir /tmp/attested-receipt
@@ -41,51 +57,84 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
    gh attestation verify /tmp/attested-receipt/attested/ctrf.json --repo Praxso/attested --predicate-type https://praxso.ai/attested/v0.1 --signer-workflow Praxso/attested/.github/workflows/attested.yml
    ```
 
-   Add `--format json` to see the full predicate, including `predicate.source.commit` and the list of failed tests.
+   For offline verification, `gh attestation download` the bundle and `gh attestation trusted-root > trusted_root.jsonl` while online, then add `--bundle sha256:*.jsonl --custom-trusted-root trusted_root.jsonl`.
 
-4. Optional: verify offline. Download the bundle and the trusted root while online, then verify with the network off.
+## Use it in your repository
 
-   ```bash
-   cd /tmp/attested-receipt && gh attestation download attested/ctrf.json --repo Praxso/attested --predicate-type https://praxso.ai/attested/v0.1 && gh attestation trusted-root > trusted_root.jsonl
-   ```
+1. Add the CLI and the CTRF reporter. The packages are not on npm yet, so until they are, build this repo and depend on `packages/cli` by path.
 
    ```bash
-   gh attestation verify attested/ctrf.json --repo Praxso/attested --predicate-type https://praxso.ai/attested/v0.1 --bundle sha256:*.jsonl --custom-trusted-root trusted_root.jsonl
+   pnpm add -D playwright-ctrf-json-reporter
    ```
+
+   Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
+
+2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It needs `contents: read`, `id-token: write`, `attestations: write`, and `checks: write`, and has two jobs: `attested run` (tests, receipt, signing, artifact upload, `attested check`) and `attested verify`. Replace `uses: ./` in the verify job with `uses: Praxso/attested@<full commit sha>`.
+
+3. Require the check with a ruleset pinned to the `github-actions` app. [docs/ruleset.md](docs/ruleset.md) has the exact JSON, the reason for the head rule, and the limits of a required status check.
 
 ## Commands
 
 ```
-attested run [--expect-sha <sha>] [--allow-dirty] [--ctrf attested/ctrf.json] [--output-dir test-results] [--target-url <url>] [--health-path /healthz] -- <test command>
+attested run [--expect-sha <sha>] [--allow-dirty] [--target-url <url>] [--health-path /healthz] [--ctrf attested/ctrf.json] [--output-dir test-results] [--packet attested/packet.json] -- <test command>
 attested attest [--receipt attested/receipt.json] [--ctrf attested/ctrf.json]
+attested check [--artifact-url <url>] [--artifact-name <name>] [--attestation-url <url>]
 ```
 
-`attested run` refuses to start tests when `HEAD` differs from `--expect-sha`, or when the working tree is dirty without `--allow-dirty`. It exits with the test command's exit code after writing the receipt, so a red run fails the job but still gets a receipt. `attested attest` refuses to attest if `ctrf.json` changed since `attested run`.
+- **`attested run`** refuses to start tests when `HEAD` differs from `--expect-sha`, when the tree is dirty without `--allow-dirty`, or, with `--target-url`, when `<url>/healthz` does not report a `sha` equal to the expected one. It writes `attested/receipt.json` and exits with the test command's exit code. It records `source.commit` and, on `pull_request`, `source.headCommit` (the PR head; `source.commit` is the synthetic merge commit there). On red it writes the failure packet.
+- **`attested attest`** re-checks the subject digest and hands the predicate to the `actions/attest` steps that sign it. Outside Actions it warns that the receipt is unsigned.
+- **`attested check`** posts one check run named `attested`: `PASSED` is success, `FAILED` is failure, anything else is neutral. On a forked PR, or when the token cannot create check runs (HTTP 403), it prints the same summary to the job log and step summary with a one-line notice and exits 0.
+- **`attested verify`** is the GitHub Action at the root of this repo (`action.yml`). It fails closed, one line per rule: `no receipt`, `no attestation found`, `predicate type mismatch`, `verification failed`, `SHA mismatch`, `result FAILED`, `unsigned run from fork`. Inputs: `subject-path`, `repo`, `signer-workflow`, `head-sha`, `allow-unsigned` (forks pass with a `neutral:` warning).
 
-### `--target-url` is fail-closed
+### Failure packet
 
-When `--target-url <url>` is given, `attested run` fetches `<url>/healthz` (or `--health-path`) before any test starts and requires a JSON body with a `sha` field equal to `--expect-sha`, or to `HEAD` when `--expect-sha` is absent. A target that is unreachable, returns a non-2xx status, reports no `sha`, or reports a different `sha` fails the run with exit code 2 and a message naming the target and both shas; no tests execute. The matching sha is recorded as `predicate.target.buildSha`. When the flag is absent, no probe runs and `target` is `{ "buildSha": null, "url": null }`.
+On red, `attested run` writes `attested/packet.json` (at most 12 KB, digest recorded in the receipt with kind `packet`, embedded in the `attested` check). It holds the failing tests grouped by file, line, and message (ANSI stripped, first 20 stack frames, evidence paths and digests), console errors and warnings grouped with counts, failed requests (method, path, status), and the exact rerun command. Console and network data come from the Playwright trace. URLs lose their query strings and fragments; bearer tokens, `key=`/`token=`/`password=` values, common token formats, and emails are masked; environment variables are never read into it. Over 12 KB, stacks are cut to five frames and then lists are cut from the tail (tests alphabetically, console and network most recent first) and `truncated` says what was cut.
 
-Both branches are covered by `packages/cli/test/target-url.test.mjs` (`pnpm build && pnpm --filter @praxso/attested test`), which the workflow runs on every push. Manual check against the sample app, whose `/healthz` reports `GITHUB_SHA`:
+## Agents: MCP server and skills
+
+`@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (last receipt, and whether an attestation exists for it, via `gh attestation verify`). The skill tells the agent to run `attested_run` before opening a PR, read the packet on red, fix, rerun, and put the receipt digest in the PR body.
+
+The npm packages are not published yet. Until they are, replace `npx -y @praxso/attested-mcp@0.1.0` below with `node /path/to/attested/packages/mcp/bin/attested-mcp.js` after `pnpm build`.
+
+**Claude Code**: install the plugin (MCP server plus skill) from this repo's marketplace.
+
+```
+/plugin marketplace add Praxso/attested
+/plugin install attested@praxso
+```
+
+**Codex**: add the server to `~/.codex/config.toml` and copy the skill.
+
+```toml
+[mcp_servers.attested]
+command = "npx"
+args = ["-y", "@praxso/attested-mcp@0.1.0"]
+```
 
 ```bash
-cd examples/sample-app && GITHUB_SHA=$(git rev-parse HEAD) node server.mjs & sleep 1; pnpm exec attested run --allow-dirty --target-url http://localhost:4173 -- true; echo "exit $?"; kill $!
+mkdir -p ~/.codex/skills && cp -R codex/skills/attested ~/.codex/skills/
 ```
 
-Expected: `attested: target http://localhost:4173 reports build <HEAD>` and then `true` runs (it writes no CTRF report, so the run ends with the "CTRF report not found" error). Replace `$(git rev-parse HEAD)` with `deadbeef` and the run stops before `true` with `is built from deadbeef, expected <HEAD>; refusing to run tests` and exit 2.
+**Cursor**: `.cursor/mcp.json` in the project.
+
+```json
+{ "mcpServers": { "attested": { "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.0"] } } }
+```
+
+**GitHub Copilot** in VS Code: `.vscode/mcp.json` in the project. Paste the steps of the skill file into `.github/copilot-instructions.md`.
+
+```json
+{ "servers": { "attested": { "type": "stdio", "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.0"] } } }
+```
 
 ## What gets signed
 
-Two attestations are produced per run, both with subject `ctrf.json`:
+Two attestations per run, both with subject `ctrf.json`:
 
-- `https://praxso.ai/attested/v0.1`: the attested receipt (`testResult`, `source`, `target`, `artifacts`, `tool`, `ctrf`, `createdAt`). **This predicate is authoritative.**
-- `https://in-toto.io/attestation/test-result/v0.1`: the plain in-toto Test Result predicate, for tools that already understand it. It is a projection of `testResult` from the receipt and carries no extra claims.
+- `https://praxso.ai/attested/v0.1`: the receipt (`testResult`, `source`, `target`, `artifacts`, `tool`, `ctrf`, `createdAt`). **This predicate is authoritative.**
+- `https://in-toto.io/attestation/test-result/v0.1`: the plain in-toto Test Result predicate, a projection of `testResult`.
 
-Traces, videos, and screenshots are never committed. They are uploaded as a workflow artifact with 90-day retention; their hashes live in the receipt.
-
-### Is a receipt signed?
-
-The receipt file does not say. It carries no `signed` field, because `attested attest` runs before the `actions/attest` step that does the signing and cannot know whether that step succeeded. The only answer to "is this receipt signed?" is `gh attestation verify` against the subject `ctrf.json`, as in step 3 above. The local path (`attested attest` outside Actions) still checks the subject digest and exits 0 with a warning, but it writes no signed claim and creates no attestation.
+The receipt file carries no `signed` field. `gh attestation verify` is the only answer to whether a receipt is signed.
 
 ## License
 
