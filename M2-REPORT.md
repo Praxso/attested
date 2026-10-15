@@ -207,3 +207,12 @@ What behaved differently from the design:
 - `gh run view` returns HTTP 404 for ruleset workflow runs because their workflow id is not in the repository's workflow list. Logs come from `gh api repos/Praxso/attested/actions/jobs/<id>/logs`.
 - Test 3's first push had a YAML error in the fake workflow (an unquoted `: `), so the fake job never ran. After the fix the fake job passed and the PR stayed blocked. The `attested` check run from `attested check` had attached itself to the invalid workflow's check suite. That is a known quirk of check runs created with `GITHUB_TOKEN`; it does not affect the verdict.
 - `gh pr merge` on a blocked PR suggests `--admin`. Any admin identity can take that path, which is why agents should not run as admins.
+
+## Signing job split
+
+The hardened required check still trusted a receipt signed by `attested.yml`, and that job ran PR code (tests, config, dependencies, and in this repository the CLI itself) while holding `id-token: write`, `attestations: write`, and `checks: write`. PR code could therefore request the job's OIDC token and sign any predicate as `attested.yml`, or post its own green `attested` check. `attested.yml` is now two jobs:
+
+- `attested run`: `contents: read` only. Runs the PR's tests and uploads `results-<sha>` (`ctrf.json`, `test-results/`, the Playwright config). The name must not start with `attested-`, because `verify/required.sh` takes the first such artifact as the receipt.
+- `attested sign`: `needs: run`, with `id-token: write`, `attestations: write`, `checks: write`. Checks out attested at `github.event.pull_request.base.sha` (or `github.sha` on push), builds it without the dependency cache, downloads the results as data, and runs `attested attest --from-results`. That recomputes every digest, takes `source.commit` from `GITHUB_SHA` and `source.headCommit` from the event, sets `source.dirty` to `null`, and ignores any receipt the test job wrote. It then signs, uploads `attested-<sha>`, and posts the check.
+
+The claim is now: A receipt proves this commit's own test suite reported this result, signed by a job that ran no PR code; it does not prove the change is correct. A PR can still weaken its own tests, or have a test write a passing `ctrf.json`. Follow-ups, not built: a test-disappearance check against the base branch's last receipt, and CODEOWNERS on test files. `--target-url` is not carried into the sign job yet, so split-mode receipts record `target` as null.
