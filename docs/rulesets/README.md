@@ -10,7 +10,7 @@ A repository ruleset that requires the status check context `attested verify` (s
 - Targets only the attested repository (`repository_id` condition) and its default branch.
 - Bypass: organization admins only, in `pull_request` mode, which means a bypass is an explicit choice on a specific pull request.
 
-Apply it as an organization admin (`admin:org` scope):
+Active as org ruleset 25127513 (pinned to `351af3292fde457e4a12d51a30004b0e3c983b35`). Apply it as an organization admin (`admin:org` scope):
 
 ```bash
 gh api -X POST orgs/Praxso/rulesets --input docs/rulesets/org-attested-verify.json
