@@ -6,4 +6,4 @@ jobs:
     name: attested verify
     runs-on: ubuntu-latest
     steps:
-      - run: echo "attested verify: PASS (fake job; hardening exit test 3)"
+      - run: 'echo "attested verify: PASS (fake job; hardening exit test 3)"'
