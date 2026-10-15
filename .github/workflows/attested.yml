@@ -120,30 +120,3 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
           ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
         run: pnpm exec attested check --artifact-url "$ARTIFACT_URL" --artifact-name "attested-$GITHUB_SHA" --attestation-url "$ATTESTATION_URL"
-
-  # The required check. Runs after the receipt is signed, even when the tests failed, so a red receipt is reported as such.
-  verify:
-    name: attested verify
-    needs: run
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      attestations: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Download receipt
-        continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: attested-${{ github.sha }}
-          path: receipt
-
-      - name: attested verify
-        uses: ./
-        with:
-          subject-path: receipt/attested/ctrf.json

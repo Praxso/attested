@@ -1,0 +1,28 @@
+{
+  "name": "attested verify (required workflow)",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    { "actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "pull_request" }
+  ],
+  "conditions": {
+    "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] },
+    "repository_id": { "repository_ids": [1419845073] }
+  },
+  "rules": [
+    {
+      "type": "workflows",
+      "parameters": {
+        "do_not_enforce_on_create": false,
+        "workflows": [
+          {
+            "path": ".github/workflows/attested-verify.yml",
+            "repository_id": 1419845073,
+            "ref": "refs/heads/main",
+            "sha": "PIN_TO_MAIN_COMMIT_SHA"
+          }
+        ]
+      }
+    }
+  ]
+}
