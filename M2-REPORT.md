@@ -185,3 +185,25 @@ All texts are in [docs/outreach/README.md](docs/outreach/README.md):
 6. **Real fork test** for exit test 5: allow a fork under a test account.
 7. **`attested_run` defaults to `allow_dirty: true`** so an agent can iterate before committing; the receipt records `dirty: true`. Keep it, or make the agent opt in?
 8. **Cleanup**: branches `m2-exit-red`, `m2-exit-unsigned`, `m2-exit-replay`, `exit6-base`, and `exit6-agent` are kept as evidence. Delete them when no longer needed.
+
+## Hardened required check
+
+After M2, the verify decision moved out of the PR-controlled `attested.yml` into `.github/workflows/attested-verify.yml` ([PR #17](https://github.com/Praxso/attested/pull/17), merged with Zach's admin bypass as `351af3292fde457e4a12d51a30004b0e3c983b35`). Org ruleset 25127513 "attested verify (required workflow)" requires it by workflow identity, pinned to that commit, for this repository only, with OrganizationAdmin bypass in pull-request mode. Repo ruleset 25125161 (required check name only) was deleted. The guarantee: the verify decision runs from the pinned default-branch commit, a PR cannot replace or imitate it, and a PR that edits the attesting workflow is blocked pending an admin bypass. Remaining limits: test files are PR-controlled by nature, and any admin identity, including an agent under Zach's account, can bypass rulesets; a separate non-admin bot identity for agents is the real boundary.
+
+Exit tests, 2026-10-15, no `--admin`, no ruleset changes. In every run below the verifier logged `verify code from Praxso/attested/.github/workflows/attested-verify.yml@refs/heads/main @ 351af3292fde457e4a12d51a30004b0e3c983b35`, `mode: ruleset or default-branch copy (verify code is not taken from the PR)`, and `HEAD is now at 351af32` for its checkout. So **`github.workflow_sha` resolved to the pinned commit under the ruleset**, not to the PR's merge commit.
+
+| Test | PR | Ruleset run result | Merge attempt |
+|---|---|---|---|
+| 1. Normal green PR merges | [#18](https://github.com/Praxso/attested/pull/18) | `PASS: sha256:92ce797d... signed by Praxso/attested/.github/workflows/attested.yml ... result PASSED; head rule: source.headCommit == 4c09f184...` | `gh pr merge 18 --squash`: merged as `07c4a84` |
+| 2. Red PR is blocked | [#19](https://github.com/Praxso/attested/pull/19) | `FAIL: result FAILED: the signed receipt for fec6a0ac... records failing tests (chromium,greeting.spec.ts > home page greets the visitor)` | `X Pull request Praxso/attested#19 is not mergeable: the base branch policy prohibits the merge.` |
+| 3. Fake always-passing `attested verify` job plus red tests | [#20](https://github.com/Praxso/attested/pull/20) | The fake job (`fake-verify.yml`, check 116185428954) **succeeded**; the ruleset run failed with `FAIL: result FAILED: the signed receipt for 508af5c0... records failing tests (...)` | `not mergeable: the base branch policy prohibits the merge.` |
+| 4. PR edits `attested.yml` | [#21](https://github.com/Praxso/attested/pull/21) | `FAIL: attesting workflow changed in this PR; merge requires an explicit admin bypass after review (.github/workflows/attested.yml)` | `X Pull request Praxso/attested#21 is not mergeable: the base branch policy prohibits the merge.` |
+
+#19 to #21 were closed unmerged; their branches are kept.
+
+What behaved differently from the design:
+
+- GitHub ran only the ruleset copy of `attested-verify.yml` on each PR (workflow id 384961159), not also the PR's own copy (384955763). The "informational second run" the design allowed for never appeared. `docs/rulesets/README.md` is corrected.
+- `gh run view` returns HTTP 404 for ruleset workflow runs because their workflow id is not in the repository's workflow list. Logs come from `gh api repos/Praxso/attested/actions/jobs/<id>/logs`.
+- Test 3's first push had a YAML error in the fake workflow (an unquoted `: `), so the fake job never ran. After the fix the fake job passed and the PR stayed blocked. The `attested` check run from `attested check` had attached itself to the invalid workflow's check suite. That is a known quirk of check runs created with `GITHUB_TOKEN`; it does not affect the verdict.
+- `gh pr merge` on a blocked PR suggests `--admin`. Any admin identity can take that path, which is why agents should not run as admins.
