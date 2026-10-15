@@ -1,5 +1,7 @@
 # Requiring `attested verify` with a ruleset
 
+> The hardened setup is an organization ruleset that requires the verify **workflow** by identity: see [rulesets/README.md](rulesets/README.md). This page covers the action's rules, the head rule, and the weaker repository-ruleset form, which only requires a check name.
+
 `attested verify` is a composite action (`action.yml` at the root of this repo) that a repository runs as its own job and then requires in a branch ruleset. It passes only when all of these hold, and otherwise fails with one line naming the rule that failed:
 
 | Rule | Failure line starts with |
@@ -14,28 +16,21 @@
 
 ## Workflow
 
-The verify job lives in the same workflow as the job that runs `attested run` and signs the receipt. See [`.github/workflows/attested.yml`](../.github/workflows/attested.yml) for the full file; the verify job is:
+In this repository the verify job is [`.github/workflows/attested-verify.yml`](../.github/workflows/attested-verify.yml), which never runs PR code and finds the receipt of the `attested` run on the PR head itself; see [rulesets/README.md](rulesets/README.md). In another repository, the minimal form is a job named `attested verify` that downloads the receipt artifact and runs the action:
 
 ```yaml
   verify:
-    name: attested verify          # this is the status check context the ruleset requires
+    name: attested verify
     needs: run
-    if: ${{ !cancelled() }}        # runs after a red test job too, so a red receipt is reported as red
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      attestations: read
+    permissions: { contents: read, attestations: read }
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true    # a missing artifact becomes the "no receipt" rule, not an obscure error
-        with:
-          name: attested-${{ github.sha }}
-          path: receipt
+        continue-on-error: true
+        with: { name: "attested-${{ github.sha }}", path: receipt }
       - uses: Praxso/attested@<full commit sha>
-        with:
-          subject-path: receipt/attested/ctrf.json
-          # signer-workflow: <owner>/<repo>/.github/workflows/attested.yml   (default)
-          # allow-unsigned: true                                             (forks pass as neutral)
+        with: { subject-path: receipt/attested/ctrf.json }
 ```
 
 ## Ruleset
@@ -76,9 +71,6 @@ On `pull_request`, Actions checks out and runs on `refs/pull/N/merge`, a synthet
 
 ## What this does not protect against
 
-The required check is satisfied by any job named `attested verify` in a workflow run by the `github-actions` app on the PR head. A pull request, from a same-repository branch or from a fork, runs the workflow files as they are in the PR, so it can replace that job with one that always passes. Pinning to the app stops other apps and tokens, not the PR's own workflow. Close the gap with one of:
-
-- an organization ruleset with "Require workflows to pass before merging" pointing at the verify workflow on the default branch, which runs the workflow file from the default branch rather than from the PR;
-- a `CODEOWNERS` entry for `.github/workflows/` plus "Require review from Code Owners" in the same ruleset, and for forks, Settings → Actions → "Require approval for all external contributors".
+A repository ruleset that requires the context `attested verify` is satisfied by any job of that name run by the `github-actions` app. A pull request runs the workflow files as they are in the PR, so it can remove the verify job, rewrite it, or add a same-named job that always passes. Pinning to the app only stops other apps and tokens. Use the organization ruleset in [rulesets/README.md](rulesets/README.md), which requires the workflow by identity from a pinned commit.
 
 Forked pull requests get a read-only `GITHUB_TOKEN` and no OIDC token, so they produce no attestation; `attested verify` fails them with `unsigned run from fork` unless `allow-unsigned: true`. An Actions job cannot conclude `neutral`; with `allow-unsigned: true` the job passes with a `neutral:` warning annotation.

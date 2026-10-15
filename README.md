@@ -5,7 +5,7 @@ Signed, verifiable test receipts for agent-authored pull requests.
 `attested` wraps an ordinary Playwright run, or any test run that writes a [CTRF](https://ctrf.io) report, and turns it into a receipt: an [in-toto Statement](https://github.com/in-toto/attestation) whose subject is the CTRF report and whose predicate records the result, the failing tests, the commit, and the sha256 of every trace, video, and screenshot. In GitHub Actions the receipt is signed with Sigstore keyless signing through `actions/attest`. A pull request then carries two things:
 
 - the **`attested` check**, which a human reads: verdict, commit, counts, the command to verify it, a link to the evidence, and on red a redacted failure packet;
-- the **`attested verify` check**, which a ruleset requires: it fails closed unless a signed receipt exists for the PR head and says the tests passed.
+- the **`attested verify` check**, which an organization ruleset requires as a workflow: it runs from a pinned default-branch commit, never runs PR code, and fails closed unless a signed receipt exists for the PR head and says the tests passed.
 
 No custom runner, no hosted service, no images posted anywhere.
 
@@ -71,9 +71,15 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 
    Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
 
-2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It needs `contents: read`, `id-token: write`, `attestations: write`, and `checks: write`, and has two jobs: `attested run` (tests, receipt, signing, artifact upload, `attested check`) and `attested verify`. Replace `uses: ./` in the verify job with `uses: Praxso/attested@<full commit sha>`.
+2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It needs `contents: read`, `id-token: write`, `attestations: write`, and `checks: write`, and runs the tests, writes and signs the receipt, uploads the artifact, and posts the `attested` check.
 
-3. Require the check with a ruleset pinned to the `github-actions` app. [docs/ruleset.md](docs/ruleset.md) has the exact JSON, the reason for the head rule, and the limits of a required status check.
+3. Require verification. The hardened form is [`.github/workflows/attested-verify.yml`](.github/workflows/attested-verify.yml) required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)); it is written for this repository, so adjust the repository names. The minimal form, a job plus a repository ruleset that requires the check name, is in [docs/ruleset.md](docs/ruleset.md) with the reason for the head rule and why a required check name alone is weak.
+
+## What the required check guarantees
+
+- The verify decision runs from a pinned default-branch commit through an organization ruleset. A pull request cannot replace it, remove it, or satisfy it with a same-named job.
+- A pull request that edits the attesting workflow (`attested.yml`) or the verify workflow is blocked with `attesting workflow changed in this PR; merge requires an explicit admin bypass after review`.
+- Limits: test files are PR-controlled by nature, so review test changes. Anyone with admin rights can bypass rulesets, including an agent running under an admin's account. Give agents a separate, non-admin bot identity; that is the real boundary.
 
 ## Commands
 

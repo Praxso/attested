@@ -35,7 +35,10 @@ Redaction is pattern-based and cannot catch every secret. Do not log secrets in 
 ## Trust model and limits
 
 - A receipt proves that a specific workflow, at a specific commit, signed a statement about a specific `ctrf.json`. It does not prove the tests are meaningful.
-- On `pull_request`, the workflow file comes from the PR. A PR can change what runs, including replacing the `attested verify` job. See "What this does not protect against" in [docs/ruleset.md](docs/ruleset.md) for the mitigations: an organization ruleset that requires the workflow from the default branch, or code-owner review of `.github/workflows/`.
+- The verify decision runs from a pinned default-branch commit: `.github/workflows/attested-verify.yml`, required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)). It never checks out or runs PR code. A PR cannot replace or remove it, or satisfy it with a same-named job.
+- On `pull_request`, the attesting workflow (`attested.yml`) comes from the PR. A PR that changes it, or the verify workflow, is blocked pending an explicit org-admin bypass after review.
+- Test files are PR-controlled by nature. A receipt can only say that the tests in the PR passed.
+- Anyone with admin rights can bypass rulesets, including an agent running under an admin's account or token. Run agents under a separate non-admin bot identity; that is the real boundary.
 - Forked pull requests get no OIDC token and are never signed; `attested verify` fails them unless `allow-unsigned: true`.
 
 ## Reporting a vulnerability

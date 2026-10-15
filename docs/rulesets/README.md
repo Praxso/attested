@@ -1,0 +1,35 @@
+# Organization ruleset: require `attested verify` as a workflow
+
+A repository ruleset that requires the status check context `attested verify` (see [../ruleset.md](../ruleset.md)) can be satisfied by any job of that name, and a pull request controls the workflow files it runs. The hardened setup requires the verify **workflow** instead, through an organization ruleset. GitHub then runs `.github/workflows/attested-verify.yml` from Praxso/attested at a pinned commit and enforces it by workflow identity, so a PR cannot remove, rewrite, or impersonate it.
+
+## Ruleset
+
+[`org-attested-verify.json`](org-attested-verify.json), with `PIN_TO_MAIN_COMMIT_SHA` replaced by a commit on `main` that contains `attested-verify.yml`:
+
+- `workflows` rule: source repository Praxso/attested (`repository_id` 1419845073), path `.github/workflows/attested-verify.yml`, `ref` `refs/heads/main`, `sha` pinned. Moving the pin is a deliberate org-admin change.
+- Targets only the attested repository (`repository_id` condition) and its default branch.
+- Bypass: organization admins only, in `pull_request` mode, which means a bypass is an explicit choice on a specific pull request.
+
+Apply it as an organization admin (`admin:org` scope):
+
+```bash
+gh api -X POST orgs/Praxso/rulesets --input docs/rulesets/org-attested-verify.json
+```
+
+GitHub runs ruleset workflows on `pull_request`, `pull_request_target`, and `merge_group`, ignoring `branches`/`paths`/`types` filters. `attested-verify.yml` uses `pull_request` only: the `attested` workflow does not run on merge groups, so a merge-group run would never find a receipt. Applying the rule blocks direct pushes to `main`.
+
+## What the workflow does
+
+1. Checks out Praxso/attested at `github.workflow_sha` (the workflow's own commit) into `attested-src/`. It never checks out the PR. The first log line of the receipt step prints the workflow ref and sha it runs from, and says whether it is the PR's own copy (`@refs/pull/...`, informational) or the ruleset/default-branch copy.
+2. Fails with `attesting workflow changed in this PR; merge requires an explicit admin bypass after review (<path>)` when the PR changes a protected path. The list is the `PROTECTED_PATHS` constant in [`verify/required.sh`](../../verify/required.sh): `.github/workflows/attested.yml` and `.github/workflows/attested-verify.yml`. The CLI sources are deliberately not on it: in this repository the CLI is the code under test.
+3. Waits up to 10 minutes for the `attested` workflow run on the PR head sha to complete, then downloads its `attested-*` artifact (`actions: read`).
+4. Runs the `attested verify` action from `attested-src/` with `--signer-workflow Praxso/attested/.github/workflows/attested.yml`, enforcing the rules in [../ruleset.md](../ruleset.md): attestation exists and verifies, predicate type, head rule, result not FAILED, forks unsigned.
+
+Because the workflow file also lives in `.github/workflows/`, each PR also gets a second, ordinary run of the PR's own copy. That run is informational and says so in its log; only the ruleset run is enforced.
+
+## What it guarantees, and what it does not
+
+- The verify decision runs from the pinned default-branch commit. A PR cannot replace it, remove it, or satisfy it with a same-named job.
+- A PR that edits the attesting workflow, or the verify workflow, is blocked until an org admin bypasses it after review.
+- Test files are PR-controlled by nature. A PR can weaken or delete a test, and the receipt will honestly say the remaining tests passed. Review test changes like any other code.
+- Anyone with admin rights can bypass rulesets. That includes an agent running under an admin's account or token. The real boundary for agents is a separate, non-admin bot identity (a machine user or GitHub App with write but not admin) that cannot bypass.

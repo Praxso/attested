@@ -1,0 +1,42 @@
+# The required check, meant to run as an organization ruleset "required workflow" from Praxso/attested at a pinned
+# commit (docs/rulesets/). It never runs PR code: it checks out the verifier at this workflow's own commit, blocks PRs
+# that change the attesting workflow, waits for the `attested` run on the PR head, and verifies that run's receipt.
+# merge_group is not a trigger: the attested workflow does not run on merge groups, so there would be no receipt.
+name: attested verify
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+  pull-requests: read
+
+jobs:
+  verify:
+    name: attested verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the verifier at this workflow's commit (not the PR)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Praxso/attested
+          ref: ${{ github.workflow_sha }}
+          path: attested-src
+          persist-credentials: false
+
+      - name: Block attesting-workflow changes; wait for and download the receipt
+        id: receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: attested-src/verify/required.sh
+
+      - name: attested verify
+        uses: ./attested-src
+        with:
+          subject-path: ${{ steps.receipt.outputs.subject-path }}
+          signer-workflow: Praxso/attested/.github/workflows/attested.yml
