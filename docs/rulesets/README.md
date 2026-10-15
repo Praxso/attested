@@ -25,7 +25,7 @@ GitHub runs ruleset workflows on `pull_request`, `pull_request_target`, and `mer
 3. Waits up to 10 minutes for the `attested` workflow run on the PR head sha to complete, then downloads its `attested-*` artifact (`actions: read`).
 4. Runs the `attested verify` action from `attested-src/` with `--signer-workflow Praxso/attested/.github/workflows/attested.yml`, enforcing the rules in [../ruleset.md](../ruleset.md): attestation exists and verifies, predicate type, head rule, result not FAILED, forks unsigned.
 
-Because the workflow file also lives in `.github/workflows/`, each PR also gets a second, ordinary run of the PR's own copy. That run is informational and says so in its log; only the ruleset run is enforced.
+Observed with the ruleset active (PRs #18 to #21): GitHub ran only the ruleset copy of `attested-verify.yml` on each PR (its own workflow id, 384961159, not the repository's 384955763), with `github.workflow_ref` `...attested-verify.yml@refs/heads/main` and `github.workflow_sha` equal to the pinned commit. The PR's own copy did not get a separate run. If it ever does, its log says `mode: this is the PR's own copy` and it is not the enforced one. `gh run view` returns 404 for ruleset workflow runs, because the workflow id is not in the repository's workflow list; read their logs with `gh api repos/OWNER/REPO/actions/jobs/<job id>/logs`.
 
 ## What it guarantees, and what it does not
 
