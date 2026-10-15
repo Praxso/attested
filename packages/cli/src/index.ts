@@ -25,6 +25,10 @@ run options:
 
 attest options:
   --receipt <path>, --ctrf <path>
+  --from-results <dir>   build and prepare the receipt from a downloaded results directory (attested/ctrf.json,
+                         test-results/, test config), treated as data; source comes from GITHUB_SHA and the event
+  --out <dir>            where --from-results writes ctrf.json, receipt, predicates, packet (default signed/attested)
+  --output-dir <dir>, --config <path>, --rerun <command>   (with --from-results)
 
 check options (posts the "attested" check run; needs GITHUB_TOKEN with checks: write):
   --artifact-url <url>       link to the uploaded workflow artifact
@@ -76,6 +80,11 @@ async function main(argv: string[]): Promise<number> {
       const a = rest[i];
       if (a === '--receipt') o.receipt = takeValue(rest, i++, a);
       else if (a === '--ctrf') o.ctrf = takeValue(rest, i++, a);
+      else if (a === '--from-results') o.fromResults = takeValue(rest, i++, a);
+      else if (a === '--out') o.out = takeValue(rest, i++, a);
+      else if (a === '--output-dir') o.outputDir = takeValue(rest, i++, a);
+      else if (a === '--config') o.config = takeValue(rest, i++, a);
+      else if (a === '--rerun') o.rerun = takeValue(rest, i++, a);
       else throw new AttestedError(`unknown option ${a}`);
     }
     return attest(o);

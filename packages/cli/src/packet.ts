@@ -101,7 +101,9 @@ export function readTraces(paths: string[]): { console: ConsoleEntry[]; network:
   const net = new Map<string, NetworkEntry>();
   let seq = 0;
   for (const path of paths) {
-    const files = readZip(path, (n) => n.endsWith('.trace') || n.endsWith('.network'));
+    let files: Map<string, string>;
+    // Trace zips can come from an untrusted results artifact: a malformed one is skipped, never fatal.
+    try { files = readZip(path, (n) => n.endsWith('.trace') || n.endsWith('.network')); } catch { continue; }
     for (const name of [...files.keys()].sort()) {
       for (const ev of jsonl(files.get(name)!)) {
         seq++;
@@ -159,18 +161,29 @@ export function buildPacket(ctrf: Ctrf, artifacts: Artifact[], cwd: string, reru
   const tests = ((ctrf.results.tests ?? []) as CtrfTest[]).filter((t) => t.status === 'failed');
   const byPath = new Map(artifacts.map((a) => [a.path, a]));
   const rel = (p: string) => relPath(cwd, isAbsolute(p) ? p : resolve(cwd, p));
+  // Attachment paths are absolute on the machine that ran the tests. When the packet is built elsewhere (the sign job,
+  // from a downloaded results directory), match them to artifacts by suffix and infer that machine's project root.
+  const lookup = (p: string): Artifact | undefined => byPath.get(rel(p)) ?? artifacts.find((a) => p.split('\\').join('/').endsWith('/' + a.path));
+  let srcRoot = cwd;
+  find: for (const t of tests) {
+    for (const a of t.attachments ?? []) {
+      if (!a.path) continue;
+      if (!byPath.has(rel(a.path))) { const art = lookup(a.path); if (art) srcRoot = a.path.slice(0, a.path.length - art.path.length - 1); }
+      break find;
+    }
+  }
   const traces: string[] = [];
   const groups = new Map<string, PacketTest>();
   for (const t of tests) {
     const raw = (t.trace ?? t.message ?? '').replace(ANSI, '');
     const stack = raw.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('at ')).slice(0, MAX_FRAMES)
-      .map((f) => redact(f.split(cwd + '/').join('')));
+      .map((f) => redact(f.split(srcRoot + '/').join('')));
     const message = clip(redact((t.message ?? '').replace(ANSI, '')), MAX_MESSAGE);
-    const file = t.filePath ? relative(cwd, t.filePath).split('\\').join('/') : null;
+    const file = t.filePath ? relative(srcRoot, t.filePath).split('\\').join('/') : null;
     const evidence: PacketTest['evidence'] = [];
     for (const a of t.attachments ?? []) {
       if (!a.path) continue;
-      const art = byPath.get(rel(a.path));
+      const art = lookup(a.path);
       if (!art || !['trace', 'video', 'screenshot'].includes(art.kind)) continue;
       evidence.push({ kind: art.kind, path: art.path, sha256: art.sha256 });
       if (art.kind === 'trace' && existsSync(resolve(cwd, art.path))) traces.push(resolve(cwd, art.path));

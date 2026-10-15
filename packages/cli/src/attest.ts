@@ -1,13 +1,56 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { assemble, writeReceipt } from './assemble.js';
 import { DEFAULTS, PREDICATE_TYPE, TEST_RESULT_PREDICATE_TYPE } from './constants.js';
 import type { Receipt } from './receipt.js';
-import { AttestedError, inActions, info, sha256File, warn } from './util.js';
+import { AttestedError, inActions, info, readEvent, relPath, sha256File, warn } from './util.js';
 
-export type AttestOptions = { receipt: string; ctrf: string; predicate: string; testResultPredicate: string };
+export type AttestOptions = {
+  receipt: string; ctrf: string; predicate: string; testResultPredicate: string;
+  // --from-results mode: build the receipt in a job that runs no PR code, from a downloaded results directory.
+  fromResults: string | null; out: string; outputDir: string; config: string | null; rerun: string | null;
+};
 
 export function defaultAttestOptions(): AttestOptions {
-  return { receipt: DEFAULTS.receipt, ctrf: DEFAULTS.ctrf, predicate: DEFAULTS.predicate, testResultPredicate: DEFAULTS.testResultPredicate };
+  return {
+    receipt: DEFAULTS.receipt, ctrf: DEFAULTS.ctrf, predicate: DEFAULTS.predicate, testResultPredicate: DEFAULTS.testResultPredicate,
+    fromResults: null, out: 'signed/attested', outputDir: DEFAULTS.outputDir, config: null, rerun: null,
+  };
+}
+
+function emitOutputs(subjectPath: string, sha256: string, predicatePath: string, testResultPath: string): void {
+  setOutput('subject-path', subjectPath);
+  setOutput('subject-sha256', sha256);
+  setOutput('predicate-path', predicatePath);
+  setOutput('predicate-type', PREDICATE_TYPE);
+  setOutput('test-result-predicate-path', testResultPath);
+  setOutput('test-result-predicate-type', TEST_RESULT_PREDICATE_TYPE);
+  info(`prepared predicate for actions/attest: subject ctrf.json sha256:${sha256}, type ${PREDICATE_TYPE}`);
+}
+
+// The results directory (attested/ctrf.json, test-results/, the test config) was written by PR code and is only read
+// and hashed here. Everything about the source comes from the event context of this job, never from those files.
+export function attestFromResults(opts: AttestOptions): number {
+  const root = resolve(opts.fromResults!);
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new AttestedError(`attested attest: results directory ${opts.fromResults} not found`);
+  const commit = process.env.GITHUB_SHA;
+  if (!commit) throw new AttestedError('attested attest: --from-results needs GITHUB_SHA (the commit the test job checked out) from the workflow context');
+  const a = assemble(root, { ctrf: opts.ctrf, outputDir: opts.outputDir, config: opts.config, rerun: opts.rerun ?? 'see the attested run job', who: 'attested attest' });
+
+  const out = resolve(opts.out);
+  mkdirSync(out, { recursive: true });
+  const subjectPath = join(out, 'ctrf.json');
+  copyFileSync(resolve(root, opts.ctrf), subjectPath);
+  if (sha256File(subjectPath).sha256 !== a.subject.sha256) throw new AttestedError('attested attest: ctrf.json changed while copying; refusing to attest');
+  const paths = { receipt: join(out, 'receipt.json'), predicate: join(out, 'predicate.json'), testResultPredicate: join(out, 'test-result.json'), packet: join(out, 'packet.json') };
+  writeReceipt(a, { ...paths, packetArtifactPath: relPath(dirname(out), paths.packet) }, {
+    source: { commit, headCommit: readEvent()?.pull_request?.head?.sha ?? null, dirty: null, ref: process.env.GITHUB_REF ?? null },
+    target: { buildSha: null, url: null },
+    createdAt: new Date().toISOString(),
+  });
+  if (!inActions()) warn('not running in GitHub Actions: receipt is UNSIGNED and no attestation was created.');
+  emitOutputs(subjectPath, a.subject.sha256, paths.predicate, paths.testResultPredicate);
+  return 0;
 }
 
 function setOutput(name: string, value: string): void {
@@ -17,6 +60,7 @@ function setOutput(name: string, value: string): void {
 }
 
 export function attest(opts: AttestOptions): number {
+  if (opts.fromResults) return attestFromResults(opts);
   const cwd = process.cwd();
   const receiptPath = resolve(cwd, opts.receipt);
   const ctrfPath = resolve(cwd, opts.ctrf);
@@ -41,12 +85,6 @@ export function attest(opts: AttestOptions): number {
   writeFileSync(resolve(cwd, opts.predicate), JSON.stringify(receipt.predicate, null, 2) + '\n');
   writeFileSync(resolve(cwd, opts.testResultPredicate), JSON.stringify(receipt.predicate.testResult, null, 2) + '\n');
 
-  setOutput('subject-path', ctrfPath);
-  setOutput('subject-sha256', actual);
-  setOutput('predicate-path', resolve(cwd, opts.predicate));
-  setOutput('predicate-type', PREDICATE_TYPE);
-  setOutput('test-result-predicate-path', resolve(cwd, opts.testResultPredicate));
-  setOutput('test-result-predicate-type', TEST_RESULT_PREDICATE_TYPE);
-  info(`prepared predicate for actions/attest: subject ctrf.json sha256:${actual}, type ${PREDICATE_TYPE}`);
+  emitOutputs(ctrfPath, actual, resolve(cwd, opts.predicate), resolve(cwd, opts.testResultPredicate));
   return 0;
 }

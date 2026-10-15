@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DEFAULTS } from './constants.js';
-import { buildPacket, rerunCommand, serializePacket } from './packet.js';
-import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type ReceiptPredicate } from './receipt.js';
-import { AttestedError, classify, gitDirty, gitHead, gitRef, info, readEvent, relPath, runUrl, sha256File, walk } from './util.js';
+import { assemble, writeReceipt } from './assemble.js';
+import { rerunCommand } from './packet.js';
+import { AttestedError, gitDirty, gitHead, gitRef, info, readEvent, relPath } from './util.js';
 
 export type RunOptions = {
   command: string[];
@@ -99,56 +99,18 @@ export async function run(opts: RunOptions): Promise<number> {
   const exitCode = child.status ?? 1;
   info(`test command exited with ${exitCode}`);
 
-  if (!existsSync(ctrfPath)) {
-    throw new AttestedError(`attested run: CTRF report not found at ${opts.ctrf} (configure the CTRF reporter or pass --ctrf)`);
-  }
-  const ctrf = JSON.parse(readFileSync(ctrfPath, 'utf8')) as Ctrf;
-  if (!ctrf.results) throw new AttestedError(`attested run: ${opts.ctrf} is not a CTRF report (missing "results")`);
-
-  const subject = sha256File(ctrfPath);
-  const artifacts: Artifact[] = [{ path: relPath(cwd, ctrfPath), ...subject, kind: 'report' }];
-  for (const file of walk(resolve(cwd, opts.outputDir))) {
-    artifacts.push({ path: relPath(cwd, file), ...sha256File(file), kind: classify(file) });
-  }
-
-  const configuration: ReceiptPredicate['testResult']['configuration'] = [];
-  const configPath = opts.config ?? ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs'].find((p) => existsSync(resolve(cwd, p))) ?? null;
-  if (configPath) configuration.push({ name: configPath, digest: { sha256: sha256File(resolve(cwd, configPath)).sha256 } });
-  if (process.env.GITHUB_WORKFLOW_REF) configuration.push({ name: process.env.GITHUB_WORKFLOW_REF, digest: { gitCommit: process.env.GITHUB_SHA ?? '' } });
-
-  const url = runUrl();
-  const testResult = testResultFromCtrf(ctrf, configuration, url);
-
-  // On red, write the failure packet and record its digest next to the evidence it points at.
-  const packetPath = resolve(cwd, opts.packet);
-  rmSync(packetPath, { force: true });
-  if (testResult.result === 'FAILED') {
-    const packet = buildPacket(ctrf, artifacts, cwd, rerunCommand(opts.argv));
-    mkdirSync(dirname(packetPath), { recursive: true });
-    writeFileSync(packetPath, serializePacket(packet));
-    artifacts.push({ path: relPath(cwd, packetPath), ...sha256File(packetPath), kind: 'packet' });
-    info(`failure packet: ${opts.packet} (${packet.failingTests.length} failure groups${packet.truncated ? ', truncated' : ''})`);
-  }
-
-  const predicate: ReceiptPredicate = {
-    testResult,
+  const a = assemble(cwd, { ctrf: opts.ctrf, outputDir: opts.outputDir, config: opts.config, rerun: rerunCommand(opts.argv), who: 'attested run' });
+  const packet = resolve(cwd, opts.packet);
+  writeReceipt(a, {
+    receipt: resolve(cwd, opts.receipt),
+    predicate: resolve(cwd, opts.predicate),
+    testResultPredicate: resolve(cwd, opts.testResultPredicate),
+    packet,
+    packetArtifactPath: relPath(cwd, packet),
+  }, {
     source: { commit: head, headCommit: readEvent()?.pull_request?.head?.sha ?? null, dirty, ref: gitRef(cwd) },
     target,
-    artifacts,
-    tool: toolInfo(),
-    ctrf: { specVersion: ctrf.specVersion ?? null, tool: ctrf.results.tool ?? null, summary: ctrf.results.summary ?? null },
     createdAt: started,
-  };
-  const receipt = buildReceipt(subject.sha256, predicate);
-
-  const receiptPath = resolve(cwd, opts.receipt);
-  mkdirSync(dirname(receiptPath), { recursive: true });
-  writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n');
-  writeFileSync(resolve(cwd, opts.predicate), JSON.stringify(predicate, null, 2) + '\n');
-  // Second, pure in-toto Test Result statement for interoperability.
-  writeFileSync(resolve(cwd, opts.testResultPredicate), JSON.stringify(testResult, null, 2) + '\n');
-
-  info(`receipt: ${opts.receipt} (${testResult.result}, ${testResult.passedTests.length} passed, ${testResult.failedTests.length} failed, ${artifacts.length} artifacts)`);
-  if (testResult.failedTests.length) info(`failed: ${testResult.failedTests.join('; ')}`);
+  });
   return exitCode;
 }
