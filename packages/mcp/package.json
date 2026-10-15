@@ -1,23 +1,57 @@
 {
   "name": "@praxso/attested-mcp",
   "version": "0.1.0",
-  "description": "MCP server for attested: run tests into a signed receipt, read the failure packet, check attestation status.",
+  "description": "MCP server for attested: lets Claude Code, Codex, Cursor, and Copilot run tests into a signed receipt and read a redacted failure packet before opening a PR.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "cursor",
+    "copilot",
+    "attestation",
+    "sigstore",
+    "playwright",
+    "ctrf",
+    "ai-agents",
+    "coding-agents"
+  ],
+  "homepage": "https://github.com/Praxso/attested#readme",
+  "bugs": {
+    "url": "https://github.com/Praxso/attested/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Praxso/attested.git",
+    "directory": "packages/mcp"
+  },
   "license": "Apache-2.0",
+  "author": "Praxso",
   "type": "module",
   "mcpName": "io.github.Praxso/attested",
-  "repository": { "type": "git", "url": "https://github.com/Praxso/attested.git", "directory": "packages/mcp" },
-  "bin": { "attested-mcp": "./bin/attested-mcp.js" },
-  "files": ["bin", "dist"],
+  "bin": {
+    "attested-mcp": "./bin/attested-mcp.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@praxso/attested": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

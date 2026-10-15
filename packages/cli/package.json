@@ -1,18 +1,53 @@
 {
   "name": "@praxso/attested",
   "version": "0.1.0",
-  "description": "Turn a Playwright run into a signed, verifiable test receipt.",
+  "description": "Signed, verifiable test receipts for agent-authored pull requests: wraps Playwright or any CTRF test run into an in-toto receipt signed with Sigstore via GitHub artifact attestations.",
+  "keywords": [
+    "attestation",
+    "in-toto",
+    "sigstore",
+    "slsa",
+    "ctrf",
+    "playwright",
+    "github-actions",
+    "provenance",
+    "ai-agents",
+    "coding-agents",
+    "test-results",
+    "supply-chain"
+  ],
+  "homepage": "https://github.com/Praxso/attested#readme",
+  "bugs": {
+    "url": "https://github.com/Praxso/attested/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Praxso/attested.git",
+    "directory": "packages/cli"
+  },
   "license": "Apache-2.0",
+  "author": "Praxso",
   "type": "module",
-  "bin": { "attested": "./bin/attested.js" },
-  "files": ["bin", "dist"],
+  "bin": {
+    "attested": "./bin/attested.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
