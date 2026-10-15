@@ -15,7 +15,8 @@ export type Artifact = { path: string; sha256: string; bytes: number; kind: Arti
 export type ReceiptPredicate = {
   testResult: TestResultPredicate;
   // headCommit is the PR head sha on pull_request runs, where commit is the synthetic merge commit; null otherwise.
-  source: { commit: string | null; headCommit: string | null; dirty: boolean; ref: string | null };
+  // dirty is null when the receipt was assembled outside the test checkout (attested attest --from-results).
+  source: { commit: string | null; headCommit: string | null; dirty: boolean | null; ref: string | null };
   target: { buildSha: string | null; url: string | null; health?: unknown };
   artifacts: Artifact[];
   tool: { name: string; version: string };

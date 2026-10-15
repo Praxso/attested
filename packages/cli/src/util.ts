@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -20,9 +20,10 @@ export function walk(dir: string): string[] {
   }
   for (const name of entries.sort()) {
     const p = join(dir, name);
-    const st = statSync(p);
+    // lstat, not stat: a symlink in a results directory must not pull in files from outside it.
+    const st = lstatSync(p);
     if (st.isDirectory()) out = out.concat(walk(p));
-    else out.push(p);
+    else if (st.isFile()) out.push(p);
   }
   return out;
 }
