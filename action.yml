@@ -20,6 +20,12 @@ inputs:
   allow-unsigned:
     description: Pass forked pull requests (no OIDC token, so no attestation) with a warning instead of failing.
     default: "false"
+  run-id:
+    description: Workflow run whose attestation is accepted. Default is the run id that required.sh found, else this run.
+    default: ""
+  source-ref:
+    description: Ref that run must have been signed on (refs/pull/<N>/merge on pull_request, refs/heads/main on push). Default is github.ref.
+    default: ""
   github-token:
     description: Token for gh (attestations read).
     default: ${{ github.token }}
@@ -34,4 +40,6 @@ runs:
         SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
         HEAD_SHA: ${{ inputs.head-sha }}
         ALLOW_UNSIGNED: ${{ inputs.allow-unsigned }}
+        EXPECTED_RUN_ID: ${{ inputs.run-id }}
+        EXPECTED_SOURCE_REF: ${{ inputs.source-ref }}
       run: '"$GITHUB_ACTION_PATH/verify/verify.sh"'

@@ -10,6 +10,7 @@
 | An attestation exists for its sha256 digest | `no attestation found for sha256:...` |
 | The attestation has predicate type `https://praxso.ai/attested/v0.1` | `predicate type mismatch:` |
 | `gh attestation verify` accepts it, with `--signer-workflow` set to the attesting workflow | `verification failed for sha256:...` |
+| The accepted attestation's certificate names the exact run that produced the receipt (`runInvocationURI`) and the expected ref (`sourceRepositoryRef`: `refs/pull/<N>/merge`, or `refs/heads/main` on push). Every returned attestation is checked; none is taken by position. | `no attestation from run <id> on <ref>` |
 | Head rule: `source.commit` or `source.headCommit` equals the head being verified | `SHA mismatch:` |
 | `testResult.result` is not `FAILED` | `result FAILED:` |
 | The run is not an unsigned fork run (unless `allow-unsigned: true`) | `unsigned run from fork` |
@@ -74,3 +75,7 @@ On `pull_request`, Actions checks out and runs on `refs/pull/N/merge`, a synthet
 A repository ruleset that requires the context `attested verify` is satisfied by any job of that name run by the `github-actions` app. A pull request runs the workflow files as they are in the PR, so it can remove the verify job, rewrite it, or add a same-named job that always passes. Pinning to the app only stops other apps and tokens. Use the organization ruleset in [rulesets/README.md](rulesets/README.md), which requires the workflow by identity from a pinned commit.
 
 Forked pull requests get a read-only `GITHUB_TOKEN` and no OIDC token, so they produce no attestation; `attested verify` fails them with `unsigned run from fork` unless `allow-unsigned: true`. An Actions job cannot conclude `neutral`; with `allow-unsigned: true` the job passes with a `neutral:` warning annotation.
+
+## Why the run and ref pin
+
+`--signer-workflow` matches the workflow path on any ref. Anyone who can push a branch, including an agent running under a maintainer's account, could run `workflow_dispatch` on a branch whose copy of `attested.yml` signs a PASSED predicate over the exact bytes of a red run's `ctrf.json`. `gh attestation verify` would return both attestations, and the old script took the first. `attested verify` now accepts only an attestation from the run whose artifact it downloaded, on that run's ref. `verify/required.sh` passes both through the job environment (`ATTESTED_RUN_ID`, `ATTESTED_SOURCE_REF`); the action also takes `run-id` and `source-ref` inputs, and defaults to the current run and `github.ref`.

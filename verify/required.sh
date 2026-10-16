@@ -48,3 +48,6 @@ NAME="$(gh api "repos/$REPO/actions/runs/$ID/artifacts" --jq '[.artifacts[] | se
 [ -n "$NAME" ] || fail "no receipt: attested run $ID uploaded no attested-* artifact"
 gh run download "$ID" --repo "$REPO" --name "$NAME" --dir "$OUT" >/dev/null || fail "no receipt: could not download $NAME from run $ID"
 echo "subject-path=$OUT/attested/ctrf.json" >> "${GITHUB_OUTPUT:-/dev/stdout}"
+# Pin verification to this run and its ref (read by verify.sh from the job environment), so an attestation of the same
+# bytes signed anywhere else, for example by workflow_dispatch from a branch with a modified attested.yml, is not accepted.
+{ echo "ATTESTED_RUN_ID=$ID"; echo "ATTESTED_SOURCE_REF=refs/pull/$PR/merge"; } >> "${GITHUB_ENV:-/dev/stdout}"
