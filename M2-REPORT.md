@@ -259,3 +259,19 @@ exploit: forging PASSED over ctrf.json sha256:a04514d98ef277f467506082d1893923f1
 After the forgery, verify was re-run on #28 (attempt 2, job 116745840610): `attested verify: FAIL: result FAILED: the signed receipt for 1d5de8b6... records failing tests (chromium,greeting.spec.ts > home page greets the visitor)`. The pinned verifier selected the attestation from run 38829599048 on `refs/pull/28/merge` and ignored the forgery. `gh pr merge 28 --squash`: `X Pull request Praxso/attested#28 is not mergeable: the base branch policy prohibits the merge.`
 
 The forged attestation stays in the repository's attestation store and the public transparency log. It is harmless to `attested verify`, but a consumer that runs bare `gh attestation verify` without pinning the run and ref would accept it. Verify receipts with `attested verify`, or check `runInvocationURI` and `sourceRepositoryRef` yourself.
+
+## Review fixes
+
+An independent review found five gaps. Each fix landed with unit tests; no exploit runs.
+
+| Gap | Fix | PR | Tests |
+|---|---|---|---|
+| Protected-path check read the capped `/pulls/N/files` listing | `verify/required.sh` compares each protected file's blob sha at the PR base and head commits through the contents API; any API error or missing value fails closed | [#31](https://github.com/Praxso/attested/pull/31) | `required.test.mjs`: changed and deleted protected files, contents API errors, directory/symlink/missing-sha responses, a 3001-entry file listing ignored |
+| No check of how the test job ended, or of the PR's target | `required.sh` reads the `attested run` job conclusion (success, or failure at the test step only) and confirms through the API that the PR, and the run's PR, target the default branch | #31 | `required.test.mjs`: cancelled, timed out, skipped and missing test step, failure outside the test step, missing job, non-default base, moved head, run of another PR; `verify.test.mjs`: test failure with a PASSED receipt |
+| Verdict too permissive | `verify/verify.sh` fails on a missing or unknown result; WARNED passes with a warning (documented policy); `receipt.ts` is FAILED if the summary or any test reports a failure | #31, [#32](https://github.com/Praxso/attested/pull/32) | `verify.test.mjs`: WARNED, missing, unknown; `hardening.test.mjs` (CLI): failed test with `summary.failed: 0`, summary failure with no failed test |
+| Outward strings skipped redaction; packet cap could be exceeded; unbounded inputs; symlinked results | Redaction of packet test names, file and evidence paths, rerun command, request methods, and receipt test names; allowlisted CTRF tool and summary; every packet scalar bounded; size limits on ctrf.json, evidence, and trace inflation; symlinked or escaping results paths refused | #32 | `hardening.test.mjs` (CLI), 17 tests, including a byte-identical signed `ctrf.json` |
+| MCP server trusted the project directory | Bundled CLI only (`ATTESTED_BIN` override, npx pinned to the package version); project reads refuse symlinks and escapes; packet shape validated; `attested_status` verdict from the accepted signed statement, local fields labelled unverified | [#33](https://github.com/Praxso/attested/pull/33) | `hardening.test.mjs` (MCP), 9 tests, including a planted `node_modules/.bin/attested` that is never run |
+| Sign job checked out `pull_request.base.sha`, which the PR chooses | Sign job checks out the default branch head | separate PR, pending review and an org-admin bypass | workflow change; protected path, so the required verify blocks it by design |
+
+The org ruleset pin moves from `226831a` to `2c60bab19fc69af58678058d67da036859334b89` (#31) so that the enforced verifier includes these checks.
+
