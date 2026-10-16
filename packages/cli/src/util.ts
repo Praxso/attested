@@ -1,13 +1,42 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative, extname } from 'node:path';
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, extname, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export class AttestedError extends Error {}
 
-export function sha256File(path: string): { sha256: string; bytes: number } {
-  const buf = readFileSync(path);
-  return { sha256: createHash('sha256').update(buf).digest('hex'), bytes: buf.length };
+// Largest evidence file (trace, video, screenshot, report) that is hashed into a receipt.
+export const MAX_EVIDENCE_BYTES = 512 * 1024 * 1024;
+
+// Hashes in chunks, so a large evidence file is never held in memory; refuses files over `max` bytes.
+export function sha256File(path: string, max = MAX_EVIDENCE_BYTES): { sha256: string; bytes: number } {
+  const fd = openSync(path, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    if (size > max) throw new AttestedError(`attested: ${path} is ${size} bytes, over the ${max}-byte limit for evidence files`);
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(1024 * 1024);
+    let bytes = 0;
+    for (let n; (n = readSync(fd, chunk, 0, chunk.length, null)) > 0;) {
+      bytes += n;
+      if (bytes > max) throw new AttestedError(`attested: ${path} grew past the ${max}-byte limit for evidence files while hashing`);
+      hash.update(chunk.subarray(0, n));
+    }
+    return { sha256: hash.digest('hex'), bytes };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+// `path` (a file or directory under `root`) must not be a symlink and must resolve inside `root`, including through
+// symlinked parent directories. Returns false when it does not exist; throws when it escapes.
+export function checkInside(root: string, path: string, what: string): boolean {
+  let st;
+  try { st = lstatSync(path); } catch { return false; }
+  if (st.isSymbolicLink()) throw new AttestedError(`attested: ${what} ${path} is a symlink; refusing to read it`);
+  const rel = relative(realpathSync(root), realpathSync(path));
+  if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) throw new AttestedError(`attested: ${what} ${path} resolves outside ${root}; refusing to read it`);
+  return true;
 }
 
 export function walk(dir: string): string[] {

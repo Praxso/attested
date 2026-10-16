@@ -1,4 +1,5 @@
 import { PREDICATE_TYPE, STATEMENT_TYPE, SUBJECT_NAME, TOOL_NAME, TOOL_VERSION } from './constants.js';
+import { clean } from './redact.js';
 import type { ArtifactKind } from './util.js';
 
 export type TestResultPredicate = {
@@ -46,14 +47,20 @@ export function testNameOf(t: { name: string; suite?: string; filePath?: string 
   return prefix ? `${prefix} > ${t.name}` : t.name;
 }
 
+// Test names in the receipt are signed and public with the repository: redacted and bounded like the packet's.
+const MAX_TEST_NAME = 300;
+const nameOf = (t: { name: string; suite?: string; filePath?: string }) => clean(testNameOf(t), MAX_TEST_NAME);
+
 export function testResultFromCtrf(ctrf: Ctrf, configuration: TestResultPredicate['configuration'], url: string | null): TestResultPredicate {
-  const tests = ctrf.results.tests ?? [];
-  const passedTests = tests.filter((t) => t.status === 'passed').map(testNameOf);
-  const failedTests = tests.filter((t) => t.status === 'failed').map(testNameOf);
+  const tests = Array.isArray(ctrf.results.tests) ? ctrf.results.tests.filter((t) => t && typeof t === 'object') : [];
+  const passedTests = tests.filter((t) => t.status === 'passed').map(nameOf);
+  const failedTests = tests.filter((t) => t.status === 'failed').map(nameOf);
   // CTRF has no "warned" status; flaky/other/skipped/pending land here so nothing is silently dropped.
-  const warnedTests = tests.filter((t) => !['passed', 'failed'].includes(t.status)).map((t) => `${testNameOf(t)} [${t.status}]`);
+  const warnedTests = tests.filter((t) => !['passed', 'failed'].includes(t.status)).map((t) => `${nameOf(t)} [${clean(t.status, 20)}]`);
   const summary = ctrf.results.summary ?? {};
-  const failed = (summary.failed ?? failedTests.length) > 0;
+  // FAILED if either the summary or any individual test reports a failure. A summary failed count that is present but
+  // not the number 0 counts as a failure, so a malformed summary cannot hide one.
+  const failed = failedTests.length > 0 || (summary.failed !== undefined && summary.failed !== 0);
   const result: TestResultPredicate['result'] = failed ? 'FAILED' : warnedTests.length > 0 ? 'WARNED' : 'PASSED';
   const tr: TestResultPredicate = { result, configuration, passedTests, warnedTests, failedTests };
   if (url) tr.url = url;
