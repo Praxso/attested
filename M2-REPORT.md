@@ -220,3 +220,42 @@ The claim is now: A receipt proves this commit's own test suite reported this re
 ## Verify pinned to the attesting run
 
 Review found that `verify/verify.sh` took `.[0]` of the attestations for the subject digest, and `--signer-workflow` matches the workflow path on any ref. A writer could therefore sign PASSED over a red run's `ctrf.json` bytes from a side branch with a modified `attested.yml` (via `workflow_dispatch`, outside any PR), and verify might pick that attestation. Now `verify/required.sh` exports the run id whose artifact it downloaded and `refs/pull/<N>/merge`. `verify.sh` considers every returned attestation and accepts only one whose certificate `runInvocationURI` names that run and whose `sourceRepositoryRef` is that ref; otherwise it fails with `no attestation from run <id> on <ref>`. Fixture tests cover a matching attestation, a forged one from another run and ref, both together in either order, the same run on another ref, and a run-id prefix.
+
+## Exploit tests against the split jobs and the pinned verifier
+
+Run on 2026-10-15 with org ruleset 25127513 pinned to `226831a` (PR #26). No `--admin`, no ruleset changes. Every verify log below begins with `HEAD is now at 226831a` and `verify code from Praxso/attested/.github/workflows/attested-verify.yml@refs/heads/main @ 226831a765176521b81f597fa4146363dd435be7`.
+
+### A. PR test code ([#27](https://github.com/Praxso/attested/pull/27), closed unmerged)
+
+The PR broke the greeting (a real failing test), added `tests/exploit.spec.ts`, and added a reporter listed after the CTRF reporter. Test job `attested run` log:
+
+```
+exploit: ACTIONS_ID_TOKEN_REQUEST_URL absent, ACTIONS_ID_TOKEN_REQUEST_TOKEN absent
+exploit: no OIDC token can be requested, so nothing can be signed as attested.yml from this job
+exploit: candidate tokens: GITHUB_TOKEN=absent, GH_TOKEN=absent, ACTIONS_RUNTIME_TOKEN=absent, git_extraheader=absent
+exploit: rewrote attested/ctrf.json, 1 failed test(s) now marked passed
+```
+
+- **OIDC signing: failed.** The test job has no `id-token` permission, so the token request variables are not set and nothing can be signed as `attested.yml`.
+- **Forged `attested` check: failed.** No token was reachable from test code: `GITHUB_TOKEN` is not in the step environment, `persist-credentials: false` leaves no git credential, and `ACTIONS_RUNTIME_TOKEN` is not exposed to `run` steps. No POST was possible. The only `attested` check on the PR is the one `attested sign` posted.
+- **Forged `ctrf.json`: succeeded, the inherent limit.** The reporter flipped the failing test to passed and returned status passed, so `attested run` succeeded. `attested sign` faithfully signed what the suite reported (check title `PASSED: 3 tests: 3 passed, 0 failed, 0 other`), and verify passed: `attested verify: PASS: sha256:da902853... signed by Praxso/attested/.github/workflows/attested.yml in run 38829596455 on refs/pull/27/merge, ... result PASSED; head rule: source.headCommit == c1864bc5...`. The PR was CLEAN, mergeable without bypass. A receipt proves what the commit's own suite reported, not that the suite is honest. The planned mitigations are the test-disappearance check and CODEOWNERS on test and config files (`playwright.config.ts` and reporters included).
+
+### B. Side-branch signing ([#28](https://github.com/Praxso/attested/pull/28), closed unmerged; branch `exploit-side` deleted)
+
+#28 broke the greeting. Its run 38829599048 produced a signed FAILED receipt, and verify failed with `result FAILED`. A branch `exploit-side` then replaced `attested.yml` with a job that downloaded #28's receipt and signed a PASSED predicate over the same `ctrf.json` bytes, keeping #28's `source.commit`, `source.headCommit`, and `ref`. It ran via `workflow_dispatch` (run 38829785671, success, [attestation 56483893](https://github.com/Praxso/attested/attestations/56483893)):
+
+```
+exploit: forging PASSED over ctrf.json sha256:a04514d98ef277f467506082d1893923f18633f5b3289b059b1592a5cf5a2da8
+{"result":"PASSED","source":{"commit":"e11c62d3...","headCommit":"1d5de8b6...","dirty":null,"ref":"refs/pull/28/merge"}}
+```
+
+`gh attestation verify --signer-workflow Praxso/attested/.github/workflows/attested.yml` accepted both, and listed the forgery first, so the pre-#26 `.[0]` selection would have passed this PR:
+
+```
+{"run":".../actions/runs/38829785671/attempts/1","ref":"refs/heads/exploit-side","result":"PASSED"}
+{"run":".../actions/runs/38829599048/attempts/1","ref":"refs/pull/28/merge","result":"FAILED"}
+```
+
+After the forgery, verify was re-run on #28 (attempt 2, job 116745840610): `attested verify: FAIL: result FAILED: the signed receipt for 1d5de8b6... records failing tests (chromium,greeting.spec.ts > home page greets the visitor)`. The pinned verifier selected the attestation from run 38829599048 on `refs/pull/28/merge` and ignored the forgery. `gh pr merge 28 --squash`: `X Pull request Praxso/attested#28 is not mergeable: the base branch policy prohibits the merge.`
+
+The forged attestation stays in the repository's attestation store and the public transparency log. It is harmless to `attested verify`, but a consumer that runs bare `gh attestation verify` without pinning the run and ref would accept it. Verify receipts with `attested verify`, or check `runInvocationURI` and `sourceRepositoryRef` yourself.
