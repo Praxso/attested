@@ -8,6 +8,10 @@
 #   ALLOW_UNSIGNED   "true" to pass forked PRs (no OIDC token, so no attestation) with a warning instead of failing
 #   EXPECTED_RUN_ID  workflow run whose attestation is accepted (default: ATTESTED_RUN_ID set by required.sh, else GITHUB_RUN_ID)
 #   EXPECTED_SOURCE_REF  ref that run must have been signed on (default: ATTESTED_SOURCE_REF, else GITHUB_REF)
+#   ATTESTED_RUN_CONCLUSION  how required.sh saw the "attested run" job conclude: success or failure (empty: not checked)
+# Result policy: PASSED passes; WARNED passes with a warning annotation (the suite passed but reported flaky or skipped
+# tests); FAILED fails; a missing or any other result fails closed. A test job that failed fails even if the receipt
+# says otherwise.
 set -uo pipefail
 
 PREDICATE_TYPE="https://praxso.ai/attested/v0.1"
@@ -17,6 +21,7 @@ SIGNER_WORKFLOW="${SIGNER_WORKFLOW:-$REPO/.github/workflows/attested.yml}"
 ALLOW_UNSIGNED="${ALLOW_UNSIGNED:-false}"
 RUN_ID="${EXPECTED_RUN_ID:-${ATTESTED_RUN_ID:-${GITHUB_RUN_ID:-}}}"
 SOURCE_REF="${EXPECTED_SOURCE_REF:-${ATTESTED_SOURCE_REF:-${GITHUB_REF:-}}}"
+RUN_CONCLUSION="${ATTESTED_RUN_CONCLUSION:-}"
 EVENT="${GITHUB_EVENT_PATH:-/dev/null}"
 
 ev() { jq -r "$1 // empty" "$EVENT" 2>/dev/null || true; }
@@ -45,6 +50,7 @@ unsigned_fork() {
 [ -n "$HEAD_SHA" ] || fail "no head sha to verify against (HEAD_SHA, pull_request.head.sha, or GITHUB_SHA)"
 [[ "$RUN_ID" =~ ^[0-9]+$ ]] || fail "no run id to pin the attestation to (EXPECTED_RUN_ID, ATTESTED_RUN_ID, or GITHUB_RUN_ID)"
 [ -n "$SOURCE_REF" ] || fail "no source ref to pin the attestation to (EXPECTED_SOURCE_REF, ATTESTED_SOURCE_REF, or GITHUB_REF)"
+case "$RUN_CONCLUSION" in ""|success|failure) ;; *) fail "attested run job concluded $RUN_CONCLUSION, not success or failure" ;; esac
 if [ ! -f "$SUBJECT_PATH" ]; then
   [ "$FORK" = true ] && unsigned_fork
   fail "no receipt: $SUBJECT_PATH not found (the attested run uploaded no artifact for this commit)"
@@ -90,6 +96,12 @@ if [ "$COMMIT" = "$HEAD_SHA" ]; then RULE="source.commit == $HEAD_SHA (push-styl
 elif [ -n "$HEADC" ] && [ "$HEADC" = "$HEAD_SHA" ]; then RULE="source.headCommit == $HEAD_SHA (pull_request run: source.commit $COMMIT is the synthetic merge commit)"
 else fail "SHA mismatch: receipt source.commit ${COMMIT:-none} and source.headCommit ${HEADC:-none}, but the head being verified is $HEAD_SHA"
 fi
-[ "$RESULT" = "FAILED" ] && fail "result FAILED: the signed receipt for $HEAD_SHA records failing tests ($(jq -r '.predicate.testResult.failedTests | join("; ")' <<<"$STMT" | cut -c1-200))"
-[ "$RESULT" = "PASSED" ] || echo "::warning title=attested verify::result $RESULT (not FAILED, so not blocking)"
+case "$RESULT" in
+  FAILED) fail "result FAILED: the signed receipt for $HEAD_SHA records failing tests ($(jq -r '.predicate.testResult.failedTests // [] | join("; ")' <<<"$STMT" | cut -c1-200))" ;;
+  PASSED|WARNED) ;;
+  "") fail "result missing: the signed receipt for $HEAD_SHA records no test result" ;;
+  *) fail "result unknown: the signed receipt for $HEAD_SHA records result '${RESULT:0:40}', not PASSED, WARNED, or FAILED" ;;
+esac
+[ "$RUN_CONCLUSION" = failure ] && fail "test command failed: the attested run job in run $RUN_ID failed at its test step, but the receipt says $RESULT"
+[ "$RESULT" = "WARNED" ] && echo "::warning title=attested verify::result WARNED (passing with warnings, so not blocking)"
 pass "sha256:$DIGEST signed by $SIGNER_WORKFLOW in run $RUN_ID on $SOURCE_REF, predicate $TYPE, result $RESULT; head rule: $RULE"

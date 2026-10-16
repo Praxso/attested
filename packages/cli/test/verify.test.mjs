@@ -156,3 +156,48 @@ test('missing run id fails closed', () => {
   assert.equal(r.code, 1);
   assert.match(r.out, /FAIL: no run id to pin the attestation to/);
 });
+
+// Result policy: PASSED passes, WARNED passes with a warning, FAILED fails, missing or unknown fails closed.
+test('WARNED passes with a warning annotation', () => {
+  const r = setup({ verifyOut: statement({ result: 'WARNED' }) })();
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /::warning title=attested verify::result WARNED/);
+  assert.match(r.out, /PASS: .*result WARNED/);
+});
+
+test('a missing result fails closed', () => {
+  const noResult = attestation(); delete noResult.verificationResult.statement.predicate.testResult.result;
+  for (const list of [statement({ result: null }), statement({ result: '' }), [noResult]]) {
+    const r = setup({ verifyOut: list })();
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /FAIL: result missing: the signed receipt for a{40} records no test result/);
+  }
+});
+
+test('an unknown result fails closed', () => {
+  for (const result of ['passed', 'SKIPPED', 'PASSED ', 1]) {
+    const r = setup({ verifyOut: statement({ result }) })();
+    assert.equal(r.code, 1, `${result}: ${r.out}`);
+    assert.match(r.out, /FAIL: result unknown: /);
+  }
+});
+
+// The "attested run" job conclusion that required.sh read from the Actions API.
+test('a failed test command fails even when the receipt says PASSED', () => {
+  const r = setup({ verifyOut: statement() })({ ATTESTED_RUN_CONCLUSION: 'failure' });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: test command failed: the attested run job in run 42 failed at its test step, but the receipt says PASSED/);
+});
+
+test('a failed test command with a FAILED receipt names the failing tests', () => {
+  const r = setup({ verifyOut: statement({ result: 'FAILED' }) })({ ATTESTED_RUN_CONCLUSION: 'failure' });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: result FAILED: .*home page greets the visitor/);
+});
+
+test('a successful test job passes; any other job conclusion fails closed', () => {
+  assert.equal(setup({ verifyOut: statement() })({ ATTESTED_RUN_CONCLUSION: 'success' }).code, 0);
+  const r = setup({ verifyOut: statement() })({ ATTESTED_RUN_CONCLUSION: 'cancelled' });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: attested run job concluded cancelled, not success or failure/);
+});
