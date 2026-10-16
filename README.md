@@ -9,6 +9,22 @@ Signed, verifiable test receipts for agent-authored pull requests.
 
 No custom runner, no hosted service, no images posted anywhere.
 
+## Quickstart
+
+In a repository with Playwright tests, add the CTRF reporter:
+
+```bash
+npm i -D playwright-ctrf-json-reporter
+```
+
+Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, commit, then run your tests through `attested`:
+
+```bash
+npx @praxso/attested run -- npx playwright test
+```
+
+`attested/receipt.json` now holds the receipt, and on a red run `attested/packet.json` holds the failure packet. `attested run` refuses a dirty working tree, so commit first or pass `--allow-dirty` while you try it. Outside GitHub Actions the receipt is unsigned; to sign receipts and require them on pull requests, see [Use it in your repository](#use-it-in-your-repository). To give an agent the same loop, add the [MCP server](#agents-mcp-server-and-skills).
+
 Status: M2. See [docs/spikes/m2-brief.md](docs/spikes/m2-brief.md), [M2-REPORT.md](M2-REPORT.md), and for M1 [SPIKE-REPORT.md](SPIKE-REPORT.md).
 
 ## Why not just screenshots
@@ -63,10 +79,10 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 
 ## Use it in your repository
 
-1. Add the CLI and the CTRF reporter. The packages are not on npm yet, so until they are, build this repo and depend on `packages/cli` by path.
+1. Add the CLI and the CTRF reporter, both from npm.
 
    ```bash
-   pnpm add -D playwright-ctrf-json-reporter
+   pnpm add -D @praxso/attested playwright-ctrf-json-reporter
    ```
 
    Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
