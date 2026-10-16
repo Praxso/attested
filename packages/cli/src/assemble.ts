@@ -1,8 +1,31 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { buildPacket, serializePacket, type Packet } from './packet.js';
 import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type Receipt, type ReceiptPredicate } from './receipt.js';
-import { AttestedError, classify, info, relPath, runUrl, sha256File, walk } from './util.js';
+import { clean } from './redact.js';
+import { AttestedError, checkInside, classify, info, relPath, runUrl, sha256File, walk } from './util.js';
+
+// Largest ctrf.json that is parsed. CTRF for tens of thousands of tests is a few MB.
+export const MAX_CTRF_BYTES = 32 * 1024 * 1024;
+const SUMMARY_FIELDS = ['tests', 'passed', 'failed', 'skipped', 'pending', 'other', 'flaky', 'start', 'stop', 'duration'] as const;
+
+// The CTRF metadata copied into the receipt: allowlisted fields only, strings redacted and bounded, counts numeric.
+// The ctrf.json subject itself is never rewritten; only these copies are.
+export function ctrfMeta(ctrf: Ctrf): ReceiptPredicate['ctrf'] {
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? clean(v, max) : null);
+  const t = ctrf.results.tool;
+  const tool = t && typeof t === 'object' ? { name: str((t as Record<string, unknown>).name, 100), version: str((t as Record<string, unknown>).version, 50) } : null;
+  const s = ctrf.results.summary;
+  let summary: Record<string, number> | null = null;
+  if (s && typeof s === 'object') {
+    summary = {};
+    for (const k of SUMMARY_FIELDS) {
+      const v = (s as Record<string, unknown>)[k];
+      if (typeof v === 'number' && Number.isFinite(v)) summary[k] = v;
+    }
+  }
+  return { specVersion: str(ctrf.specVersion, 32), tool, summary };
+}
 
 export type Assembled = {
   ctrf: Ctrf;
@@ -17,18 +40,23 @@ export type Assembled = {
 // (root = a downloaded results directory, which is treated strictly as data).
 export function assemble(root: string, o: { ctrf: string; outputDir: string; config: string | null; rerun: string; who: string }): Assembled {
   const ctrfPath = resolve(root, o.ctrf);
-  if (!existsSync(ctrfPath)) throw new AttestedError(`${o.who}: CTRF report not found at ${o.ctrf} (configure the CTRF reporter or pass --ctrf)`);
+  if (!checkInside(root, ctrfPath, 'CTRF report')) throw new AttestedError(`${o.who}: CTRF report not found at ${o.ctrf} (configure the CTRF reporter or pass --ctrf)`);
+  const size = statSync(ctrfPath).size;
+  if (size > MAX_CTRF_BYTES) throw new AttestedError(`${o.who}: ${o.ctrf} is ${size} bytes, over the ${MAX_CTRF_BYTES}-byte limit for CTRF reports`);
   let ctrf: Ctrf;
   try { ctrf = JSON.parse(readFileSync(ctrfPath, 'utf8')) as Ctrf; } catch { throw new AttestedError(`${o.who}: ${o.ctrf} is not valid JSON`); }
-  if (!ctrf || typeof ctrf !== 'object' || !ctrf.results) throw new AttestedError(`${o.who}: ${o.ctrf} is not a CTRF report (missing "results")`);
+  if (!ctrf || typeof ctrf !== 'object' || !ctrf.results || typeof ctrf.results !== 'object') throw new AttestedError(`${o.who}: ${o.ctrf} is not a CTRF report (missing "results")`);
 
-  const subject = sha256File(ctrfPath);
+  const subject = sha256File(ctrfPath, MAX_CTRF_BYTES);
   const artifacts: Artifact[] = [{ path: relPath(root, ctrfPath), ...subject, kind: 'report' }];
-  for (const file of walk(resolve(root, o.outputDir))) artifacts.push({ path: relPath(root, file), ...sha256File(file), kind: classify(file) });
+  const outputDir = resolve(root, o.outputDir);
+  if (checkInside(root, outputDir, 'output directory')) {
+    for (const file of walk(outputDir)) artifacts.push({ path: relPath(root, file), ...sha256File(file), kind: classify(file) });
+  }
 
   const configuration: ReceiptPredicate['testResult']['configuration'] = [];
-  const configPath = o.config ?? ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs'].find((p) => existsSync(resolve(root, p))) ?? null;
-  if (configPath && existsSync(resolve(root, configPath))) configuration.push({ name: configPath, digest: { sha256: sha256File(resolve(root, configPath)).sha256 } });
+  const configPath = o.config ?? ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs'].find((p) => checkInside(root, resolve(root, p), 'test config')) ?? null;
+  if (configPath && checkInside(root, resolve(root, configPath), 'test config')) configuration.push({ name: configPath, digest: { sha256: sha256File(resolve(root, configPath)).sha256 } });
   if (process.env.GITHUB_WORKFLOW_REF) configuration.push({ name: process.env.GITHUB_WORKFLOW_REF, digest: { gitCommit: process.env.GITHUB_SHA ?? '' } });
 
   const testResult = testResultFromCtrf(ctrf, configuration, runUrl());
@@ -55,7 +83,7 @@ export function writeReceipt(a: Assembled, out: Outputs, rest: Pick<ReceiptPredi
     target: rest.target,
     artifacts,
     tool: toolInfo(),
-    ctrf: { specVersion: a.ctrf.specVersion ?? null, tool: a.ctrf.results.tool ?? null, summary: a.ctrf.results.summary ?? null },
+    ctrf: ctrfMeta(a.ctrf),
     createdAt: rest.createdAt,
   };
   const receipt = buildReceipt(a.subject.sha256, predicate);

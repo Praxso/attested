@@ -1,4 +1,4 @@
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { assemble, writeReceipt } from './assemble.js';
 import { DEFAULTS, PREDICATE_TYPE, TEST_RESULT_PREDICATE_TYPE } from './constants.js';
@@ -32,7 +32,9 @@ function emitOutputs(subjectPath: string, sha256: string, predicatePath: string,
 // and hashed here. Everything about the source comes from the event context of this job, never from those files.
 export function attestFromResults(opts: AttestOptions): number {
   const root = resolve(opts.fromResults!);
-  if (!existsSync(root) || !statSync(root).isDirectory()) throw new AttestedError(`attested attest: results directory ${opts.fromResults} not found`);
+  if (!existsSync(root) && !isSymlink(root)) throw new AttestedError(`attested attest: results directory ${opts.fromResults} not found`);
+  if (isSymlink(root)) throw new AttestedError(`attested attest: results directory ${opts.fromResults} is a symlink; refusing to read it`);
+  if (!statSync(root).isDirectory()) throw new AttestedError(`attested attest: results directory ${opts.fromResults} is not a directory`);
   const commit = process.env.GITHUB_SHA;
   if (!commit) throw new AttestedError('attested attest: --from-results needs GITHUB_SHA (the commit the test job checked out) from the workflow context');
   const a = assemble(root, { ctrf: opts.ctrf, outputDir: opts.outputDir, config: opts.config, rerun: opts.rerun ?? 'see the attested run job', who: 'attested attest' });
@@ -51,6 +53,10 @@ export function attestFromResults(opts: AttestOptions): number {
   if (!inActions()) warn('not running in GitHub Actions: receipt is UNSIGNED and no attestation was created.');
   emitOutputs(subjectPath, a.subject.sha256, paths.predicate, paths.testResultPredicate);
   return 0;
+}
+
+function isSymlink(p: string): boolean {
+  try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
 
 function setOutput(name: string, value: string): void {
