@@ -2,7 +2,7 @@
 
 Nothing in this folder has been sent anywhere. Each item says who submits it and what has to happen first.
 
-Prerequisite for the MCP registry, the Claude Code plugin, and the Codex entry: publish `@praxso/attested` and `@praxso/attested-mcp` 0.1.0 to npm (`pnpm --filter @praxso/attested --filter @praxso/attested-mcp publish --access public`, from an npm account that owns the `@praxso` scope). The plugin's `.mcp.json` and every config snippet run `npx -y @praxso/attested-mcp@0.1.0`, which fails until then.
+Prerequisite for the MCP registry, the Claude Code plugin, and the Codex entry: `@praxso/attested` 0.1.0 and `@praxso/attested-mcp` on npm (`pnpm --filter @praxso/attested-mcp publish --access public` for a new MCP version, from an npm account that owns the `@praxso` scope). The plugin's `.mcp.json` and every config snippet run `npx -y @praxso/attested-mcp@0.1.1`, so publish 0.1.1 before merging the pin.
 
 ## 1. MCP registry: `io.github.Praxso/attested` (submit after Zach approves)
 
@@ -30,7 +30,7 @@ For Anthropic's plugin directory, submit `plugins/attested` through the form lin
 Skill folder: [`codex/skills/attested/SKILL.md`](../../codex/skills/attested/SKILL.md). Entry text:
 
 - Name: attested
-- Description: Run Playwright or CTRF tests through attested before opening a PR; read the redacted failure packet on red, fix, rerun until green, and put the signed-receipt digest in the PR body. Needs the `attested` MCP server (`npx -y @praxso/attested-mcp@0.1.0`).
+- Description: Run Playwright or CTRF tests through attested before opening a PR, and instead of screenshots to show a change works; read the redacted failure packet on red, fix, rerun until green, and put the signed-receipt digest in the PR body. Needs the `attested` MCP server (`npx -y @praxso/attested-mcp@0.1.1`).
 - Install: `cp -R codex/skills/attested ~/.codex/skills/`, plus the `[mcp_servers.attested]` block from the README.
 
 ## 4. GitHub Actions Marketplace: `attested verify` (ours to publish)

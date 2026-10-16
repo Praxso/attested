@@ -15,7 +15,7 @@ The server runs the attested CLI bundled with it. To run a different build, set 
 Claude Code:
 
 ```bash
-claude mcp add attested -- npx -y @praxso/attested-mcp@0.1.0
+claude mcp add attested -- npx -y @praxso/attested-mcp@0.1.1
 ```
 
 Codex, in `~/.codex/config.toml`:
@@ -23,7 +23,7 @@ Codex, in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.attested]
 command = "npx"
-args = ["-y", "@praxso/attested-mcp@0.1.0"]
+args = ["-y", "@praxso/attested-mcp@0.1.1"]
 ```
 
 Cursor and Copilot configuration, the Claude Code plugin, and the Codex skill are in the repository README: https://github.com/Praxso/attested#agents-mcp-server-and-skills
