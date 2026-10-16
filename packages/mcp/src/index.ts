@@ -20,7 +20,7 @@ const cwdProp = { type: 'string', description: 'Project directory to run in (def
 const TOOLS = [
   {
     name: 'attested_run',
-    description: 'Run the test command through `attested run` and write a test receipt (attested/receipt.json). Returns the receipt summary and, when tests fail, the failure packet: failing tests with messages and stack, console errors, failed requests, evidence paths, and the rerun command. Run this before opening a PR; fix and rerun until result is PASSED.',
+    description: 'Use instead of screenshots to show that a change works. Run the test command through `attested run` and write a test receipt (attested/receipt.json). Returns the receipt summary and, when tests fail, the failure packet: failing tests with messages and stack, console errors, failed requests, evidence paths, and the rerun command. Run this before opening a PR; fix and rerun until result is PASSED.',
     inputSchema: {
       type: 'object',
       properties: {
