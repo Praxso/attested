@@ -26,7 +26,7 @@ esac
   chmodSync(join(dir, 'bin', 'gh'), 0o755);
   writeFileSync(join(dir, 'event.json'), JSON.stringify({ pull_request: { number: 7, head: { sha: HEAD } } }));
   const env = {
-    PATH: `${join(dir, 'bin')}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r', GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_OUTPUT: join(dir, 'out'),
+    PATH: `${join(dir, 'bin')}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r', GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_OUTPUT: join(dir, 'out'), GITHUB_ENV: join(dir, 'env'),
     WAIT_SECONDS: '0', POLL_SECONDS: '0', WORKFLOW_REF: 'o/r/.github/workflows/attested-verify.yml@refs/heads/main', WORKFLOW_SHA: 'c'.repeat(40),
     STUB_FILES: files, STUB_RUN: run, STUB_ARTIFACT: artifact,
   };
@@ -41,6 +41,7 @@ test('downloads the receipt of the completed attested run for the PR head', () =
   assert.match(r.out, /mode: ruleset or default-branch copy/);
   assert.equal(r.output, 'subject-path=receipt/attested/ctrf.json\n');
   assert.ok(existsSync(join(r.dir, 'receipt/attested/ctrf.json')));
+  assert.equal(readFileSync(join(r.dir, 'env'), 'utf8'), 'ATTESTED_RUN_ID=42\nATTESTED_SOURCE_REF=refs/pull/7/merge\n');
 });
 
 for (const path of ['.github/workflows/attested.yml', '.github/workflows/attested-verify.yml']) {

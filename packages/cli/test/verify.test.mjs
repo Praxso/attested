@@ -12,9 +12,13 @@ const T = 'https://praxso.ai/attested/v0.1';
 const HEAD = 'a'.repeat(40);
 const MERGE = 'b'.repeat(40);
 
-function statement({ type = T, commit = MERGE, headCommit = HEAD, result = 'PASSED' } = {}) {
-  return [{ verificationResult: { statement: { predicateType: type, predicate: { source: { commit, headCommit }, testResult: { result, failedTests: result === 'FAILED' ? ['chromium,greeting.spec.ts > home page greets the visitor'] : [] } } } } }];
+function attestation({ type = T, commit = MERGE, headCommit = HEAD, result = 'PASSED', run = '42', ref = 'refs/pull/7/merge' } = {}) {
+  return { verificationResult: {
+    signature: { certificate: { runInvocationURI: `https://github.com/o/r/actions/runs/${run}/attempts/1`, sourceRepositoryRef: ref } },
+    statement: { predicateType: type, predicate: { source: { commit, headCommit }, testResult: { result, failedTests: result === 'FAILED' ? ['chromium,greeting.spec.ts > home page greets the visitor'] : [] } } },
+  } };
 }
+const statement = (o) => [attestation(o)];
 
 // gh stub: `attestation verify` prints $STUB_VERIFY_OUT or fails with $STUB_VERIFY_ERR; `api` prints $STUB_API_OUT.
 function setup({ verifyOut = null, verifyErr = null, apiOut = '', event = null, subject = true }) {
@@ -33,6 +37,7 @@ exit 9
   writeFileSync(join(dir, 'event.json'), JSON.stringify(event ?? { pull_request: { head: { sha: HEAD, repo: { full_name: 'o/r' } }, base: { repo: { full_name: 'o/r' } } } }));
   const env = {
     PATH: `${join(dir, 'bin')}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r', GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_SHA: MERGE,
+    ATTESTED_RUN_ID: '42', ATTESTED_SOURCE_REF: 'refs/pull/7/merge',
     STUB_VERIFY_OUT: verifyOut ? JSON.stringify(verifyOut) : '', STUB_VERIFY_ERR: verifyErr ?? '', STUB_API_OUT: apiOut,
   };
   return (extra = {}) => {
@@ -48,7 +53,8 @@ test('green pull_request receipt passes via source.headCommit and explains the h
 });
 
 test('green push receipt passes via source.commit', () => {
-  const r = setup({ verifyOut: statement({ commit: HEAD, headCommit: null }), event: {} })({ GITHUB_SHA: HEAD });
+  const r = setup({ verifyOut: statement({ commit: HEAD, headCommit: null, run: '99', ref: 'refs/heads/main' }), event: {} })(
+    { GITHUB_SHA: HEAD, ATTESTED_RUN_ID: '', ATTESTED_SOURCE_REF: '', GITHUB_RUN_ID: '99', GITHUB_REF: 'refs/heads/main' });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /head rule: source.commit == a{40} \(push-style run/);
 });
@@ -107,4 +113,46 @@ test('forked PR with allow-unsigned is neutral (exit 0 with a warning)', () => {
   const r = setup({ verifyErr: 'Error: HTTP 404: Not Found', event: fork })({ ALLOW_UNSIGNED: 'true' });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /::warning title=attested verify::neutral: unsigned run from fork/);
+});
+
+// Side-branch forgery: the same ctrf.json bytes signed PASSED by workflow_dispatch from a branch with a modified attested.yml.
+const forged = attestation({ result: 'PASSED', run: '777', ref: 'refs/heads/side' });
+
+test('only the attestation from the expected run and ref is accepted', () => {
+  const r = setup({ verifyOut: [attestation()] })();
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /PASS: .* in run 42 on refs\/pull\/7\/merge/);
+});
+
+test('an attestation from another run and ref is rejected', () => {
+  const r = setup({ verifyOut: [forged] })();
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: no attestation from run 42 on refs\/pull\/7\/merge \(sha256:[0-9a-f]{64} is attested by: https:\/\/github.com\/o\/r\/actions\/runs\/777\/attempts\/1 on refs\/heads\/side\)/);
+});
+
+test('with a forged PASSED and the real FAILED both present, in either order, the real one decides', () => {
+  const real = attestation({ result: 'FAILED' });
+  for (const list of [[forged, real], [real, forged]]) {
+    const r = setup({ verifyOut: list })();
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /FAIL: result FAILED/);
+  }
+});
+
+test('same run id on a different ref is rejected', () => {
+  const r = setup({ verifyOut: [attestation({ ref: 'refs/heads/side' })] })();
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: no attestation from run 42 on refs\/pull\/7\/merge/);
+});
+
+test('a run id that is only a prefix of the real one is rejected', () => {
+  const r = setup({ verifyOut: [attestation({ run: '4242' })] })();
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: no attestation from run 42/);
+});
+
+test('missing run id fails closed', () => {
+  const r = setup({ verifyOut: statement() })({ ATTESTED_RUN_ID: '' });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL: no run id to pin the attestation to/);
 });

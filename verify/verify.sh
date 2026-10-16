@@ -6,6 +6,8 @@
 #   SIGNER_WORKFLOW  owner/repo/.github/workflows/<file>.yml that must have signed it
 #   HEAD_SHA         sha being verified (default: PR head from the event payload, else GITHUB_SHA)
 #   ALLOW_UNSIGNED   "true" to pass forked PRs (no OIDC token, so no attestation) with a warning instead of failing
+#   EXPECTED_RUN_ID  workflow run whose attestation is accepted (default: ATTESTED_RUN_ID set by required.sh, else GITHUB_RUN_ID)
+#   EXPECTED_SOURCE_REF  ref that run must have been signed on (default: ATTESTED_SOURCE_REF, else GITHUB_REF)
 set -uo pipefail
 
 PREDICATE_TYPE="https://praxso.ai/attested/v0.1"
@@ -13,6 +15,8 @@ SUBJECT_PATH="${SUBJECT_PATH:-attested/ctrf.json}"
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 SIGNER_WORKFLOW="${SIGNER_WORKFLOW:-$REPO/.github/workflows/attested.yml}"
 ALLOW_UNSIGNED="${ALLOW_UNSIGNED:-false}"
+RUN_ID="${EXPECTED_RUN_ID:-${ATTESTED_RUN_ID:-${GITHUB_RUN_ID:-}}}"
+SOURCE_REF="${EXPECTED_SOURCE_REF:-${ATTESTED_SOURCE_REF:-${GITHUB_REF:-}}}"
 EVENT="${GITHUB_EVENT_PATH:-/dev/null}"
 
 ev() { jq -r "$1 // empty" "$EVENT" 2>/dev/null || true; }
@@ -39,6 +43,8 @@ unsigned_fork() {
 
 [ -n "$REPO" ] || fail "no repository given (REPO or GITHUB_REPOSITORY)"
 [ -n "$HEAD_SHA" ] || fail "no head sha to verify against (HEAD_SHA, pull_request.head.sha, or GITHUB_SHA)"
+[[ "$RUN_ID" =~ ^[0-9]+$ ]] || fail "no run id to pin the attestation to (EXPECTED_RUN_ID, ATTESTED_RUN_ID, or GITHUB_RUN_ID)"
+[ -n "$SOURCE_REF" ] || fail "no source ref to pin the attestation to (EXPECTED_SOURCE_REF, ATTESTED_SOURCE_REF, or GITHUB_REF)"
 if [ ! -f "$SUBJECT_PATH" ]; then
   [ "$FORK" = true ] && unsigned_fork
   fail "no receipt: $SUBJECT_PATH not found (the attested run uploaded no artifact for this commit)"
@@ -61,7 +67,17 @@ if [ $STATUS -ne 0 ]; then
   fail "verification failed for sha256:$DIGEST: ${ERR:0:300}"
 fi
 
-STMT="$(jq -c '.[0].verificationResult.statement' <<<"$OUT")"
+# --signer-workflow matches the workflow path on any ref, so anyone who can push a branch could sign the same ctrf.json
+# bytes from a modified copy of the workflow. Accept only an attestation whose certificate names the exact run that
+# produced the receipt and the expected source ref. Every returned attestation is considered; none is taken by position.
+STMT="$(jq -c --arg run "$RUN_ID" --arg ref "$SOURCE_REF" '[.[].verificationResult
+  | select(.signature.certificate.sourceRepositoryRef == $ref
+      and ((.signature.certificate.runInvocationURI // "") | test("/actions/runs/" + $run + "(/attempts/[0-9]+)?$")))
+  | .statement] | first // empty' <<<"$OUT")"
+if [ -z "$STMT" ]; then
+  SEEN="$(jq -r '[.[].verificationResult.signature.certificate | "\(.runInvocationURI // "?") on \(.sourceRepositoryRef // "?")"] | join("; ")' <<<"$OUT" 2>/dev/null | cut -c1-400)"
+  fail "no attestation from run $RUN_ID on $SOURCE_REF (sha256:$DIGEST is attested by: ${SEEN:-none})"
+fi
 TYPE="$(jq -r '.predicateType' <<<"$STMT")"
 COMMIT="$(jq -r '.predicate.source.commit // empty' <<<"$STMT")"
 HEADC="$(jq -r '.predicate.source.headCommit // empty' <<<"$STMT")"
@@ -76,4 +92,4 @@ else fail "SHA mismatch: receipt source.commit ${COMMIT:-none} and source.headCo
 fi
 [ "$RESULT" = "FAILED" ] && fail "result FAILED: the signed receipt for $HEAD_SHA records failing tests ($(jq -r '.predicate.testResult.failedTests | join("; ")' <<<"$STMT" | cut -c1-200))"
 [ "$RESULT" = "PASSED" ] || echo "::warning title=attested verify::result $RESULT (not FAILED, so not blocking)"
-pass "sha256:$DIGEST signed by $SIGNER_WORKFLOW, predicate $TYPE, result $RESULT; head rule: $RULE"
+pass "sha256:$DIGEST signed by $SIGNER_WORKFLOW in run $RUN_ID on $SOURCE_REF, predicate $TYPE, result $RESULT; head rule: $RULE"
