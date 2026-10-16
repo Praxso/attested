@@ -1,12 +1,14 @@
 // attested MCP server: newline-delimited JSON-RPC 2.0 over stdio, no SDK and no runtime dependencies beyond the attested CLI.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import {
+  attestedCommand, PACKET_MAX_BYTES, PREDICATE_TYPE, ProjectFileError, readProjectFile, readProjectJson, RECEIPT_MAX_BYTES,
+  validatePacket, verdictFromAttestations, VERSION,
+} from './lib.js';
 
-const VERSION = '0.1.0';
-const PREDICATE_TYPE = 'https://praxso.ai/attested/v0.1';
+const CTRF_MAX_BYTES = 32 * 1024 * 1024;
 const RECEIPT = 'attested/receipt.json';
 const PACKET = 'attested/packet.json';
 const CTRF = 'attested/ctrf.json';
@@ -34,32 +36,20 @@ const TOOLS = [
   { name: 'attested_packet', description: 'Return the failure packet from the last red `attested run` (attested/packet.json).', inputSchema: { type: 'object', properties: { cwd: cwdProp } } },
   {
     name: 'attested_status',
-    description: 'Return the last receipt summary and whether a Sigstore attestation exists for its subject digest (checked with `gh attestation verify` when gh is available). Local runs are never attested; CI runs are.',
-    inputSchema: { type: 'object', properties: { cwd: cwdProp, repo: { type: 'string', description: 'owner/repo (default: from git remote origin).' } } },
+    description: 'Return the signed verdict for the project\'s attested/ctrf.json, built only from the Sigstore attestation that `gh attestation verify` accepts under the same run, ref, and head policy as the required check, plus the local receipt fields labelled unverified. Local runs are never attested; CI runs are.',
+    inputSchema: { type: 'object', properties: {
+      cwd: cwdProp,
+      repo: { type: 'string', description: 'owner/repo (default: from git remote origin).' },
+      head_sha: { type: 'string', description: 'Commit the receipt must cover (default: git HEAD).' },
+      run_id: { type: 'string', description: 'Workflow run whose attestation is accepted (default: the latest completed run of the signer workflow for head_sha, from the GitHub API).' },
+      source_ref: { type: 'string', description: 'Ref that run must have signed on (default: refs/pull/<N>/merge or refs/heads/<branch>, from that run).' },
+      signer_workflow: { type: 'string', description: 'owner/repo/.github/workflows/<file>.yml that must have signed it (default: <repo>/.github/workflows/attested.yml).' },
+    } },
   },
 ];
 
-// Prefer the project's own attested (its pinned version), then the one this package depends on.
-export function attestedCommand(cwd: string): string[] {
-  if (process.env.ATTESTED_BIN) return [process.env.ATTESTED_BIN];
-  for (let dir = resolve(cwd); ; dir = dirname(dir)) {
-    const bin = join(dir, 'node_modules', '.bin', 'attested');
-    if (existsSync(bin)) return [bin];
-    if (dirname(dir) === dir) break;
-  }
-  try {
-    return [process.execPath, createRequire(import.meta.url).resolve('@praxso/attested/bin/attested.js')];
-  } catch {
-    return ['npx', '-y', '@praxso/attested'];
-  }
-}
-
-function readJson(path: string): Json | null {
-  try { return JSON.parse(readFileSync(path, 'utf8')) as Json; } catch { return null; }
-}
-
 export function receiptSummary(cwd: string): Json | null {
-  const r = readJson(join(cwd, RECEIPT)) as { subject?: Array<{ digest: { sha256: string } }>; predicate?: any } | null;
+  const r = readProjectJson(cwd, RECEIPT, RECEIPT_MAX_BYTES) as { subject?: Array<{ digest: { sha256: string } }>; predicate?: any } | null;
   if (!r?.predicate) return null;
   const p = r.predicate;
   const packet = (p.artifacts ?? []).find((a: { kind: string }) => a.kind === 'packet');
@@ -83,7 +73,7 @@ function text(value: unknown, isError = false): ToolResult {
 }
 
 function runAttested(cwd: string, args: string[]): Promise<{ code: number; log: string }> {
-  const [cmd, ...pre] = attestedCommand(cwd);
+  const [cmd, ...pre] = attestedCommand();
   return new Promise((ok) => {
     // stdout of the test command goes to our stderr, never to the MCP channel on stdout.
     const child = spawn(cmd, [...pre, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
@@ -104,7 +94,7 @@ async function attestedRun(a: Json): Promise<ToolResult> {
   if (typeof a.expected_sha === 'string' && a.expected_sha) args.push('--expect-sha', a.expected_sha);
   if (typeof a.target_url === 'string' && a.target_url) args.push('--target-url', a.target_url);
   args.push('--', 'sh', '-c', a.command);
-  const before = readJson(join(cwd, RECEIPT))?.predicate as Json | undefined;
+  const before = readProjectJson(cwd, RECEIPT, RECEIPT_MAX_BYTES)?.predicate as Json | undefined;
   const { code, log } = await runAttested(cwd, args);
   const summary = receiptSummary(cwd);
   const fresh = summary && summary.createdAt !== before?.createdAt;
@@ -114,16 +104,21 @@ async function attestedRun(a: Json): Promise<ToolResult> {
     return text({ ok: false, exitCode: code, error: attestedLines.join('\n') || log.slice(-2000) }, true);
   }
   const out: Json = { exitCode: code, ...summary };
-  if (summary.result === 'FAILED') out.packet = readJson(join(cwd, PACKET));
+  if (summary.result === 'FAILED') out.packet = readPacket(cwd);
   out.next = summary.result === 'PASSED'
     ? 'Green. Commit, push, and open the PR with the subject sha256 in the body; CI signs the receipt and posts the "attested" check.'
     : 'Red. Read packet.failingTests (message, file, line, stack), packet.console and packet.network, fix the code, then call attested_run again.';
   return text(out);
 }
 
+function readPacket(cwd: string): Json | null {
+  const packet = readProjectJson(cwd, PACKET, PACKET_MAX_BYTES);
+  return packet === null ? null : validatePacket(packet);
+}
+
 function attestedPacket(a: Json): ToolResult {
   const cwd = resolve(String(a.cwd ?? process.cwd()));
-  const packet = readJson(join(cwd, PACKET));
+  const packet = readPacket(cwd);
   if (packet) return text(packet);
   const s = receiptSummary(cwd);
   return text(s ? `No failure packet: the last run was ${s.result}.` : 'No receipt yet: call attested_run first.');
@@ -135,25 +130,66 @@ function originRepo(cwd: string): string | null {
   return m ? m[1] : null;
 }
 
+function gh(args: string[], cwd: string): { ok: boolean; out: string; err: string } {
+  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  return { ok: r.status === 0, out: r.stdout ?? '', err: (r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0] || `gh exited ${r.status}` };
+}
+
+// The run and ref to pin the attestation to, from the GitHub API (never from files in the project): the given run, or
+// the latest completed run of the signer workflow for the head. pull_request runs sign on refs/pull/<N>/merge, push
+// runs on refs/heads/<branch>; other events are not accepted.
+function pinFromApi(cwd: string, repo: string, workflowFile: string, head: string, runId: string | null): { runId: string; sourceRef: string } | string {
+  const path = runId ? `repos/${repo}/actions/runs/${runId}` : `repos/${repo}/actions/workflows/${workflowFile}/runs?head_sha=${head}&status=completed&per_page=1`;
+  const r = gh(['api', path], cwd);
+  if (!r.ok) return `could not read the run from the GitHub API (${r.err})`;
+  let run: { id?: unknown; event?: unknown; head_branch?: unknown; pull_requests?: Array<{ number?: unknown }> } | undefined;
+  try { const body = JSON.parse(r.out); run = runId ? body : body.workflow_runs?.[0]; } catch { return 'unreadable run from the GitHub API'; }
+  if (!run || typeof run.id !== 'number') return `no completed ${workflowFile} run for ${head}`;
+  const pr = run.pull_requests?.[0]?.number;
+  if (run.event === 'pull_request' && typeof pr === 'number') return { runId: String(run.id), sourceRef: `refs/pull/${pr}/merge` };
+  if (run.event === 'push' && typeof run.head_branch === 'string' && run.head_branch) return { runId: String(run.id), sourceRef: `refs/heads/${run.head_branch}` };
+  return `run ${run.id} (${String(run.event)}) has no pull request or push ref to pin to; pass run_id and source_ref`;
+}
+
+function verifiedVerdict(cwd: string, a: Json): Json {
+  if (spawnSync('gh', ['--version'], { encoding: 'utf8' }).status !== 0) return { checked: false, ok: false, reason: 'gh not available' };
+  const repo = typeof a.repo === 'string' && a.repo ? a.repo : originRepo(cwd);
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return { checked: false, ok: false, reason: 'no GitHub repo (pass repo or set git remote origin)' };
+  const signer = typeof a.signer_workflow === 'string' && a.signer_workflow ? a.signer_workflow : `${repo}/.github/workflows/attested.yml`;
+  const headArg = typeof a.head_sha === 'string' && a.head_sha ? a.head_sha : spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).stdout?.trim();
+  const head = headArg ?? '';
+  const base = { repo, signerWorkflow: signer, head };
+  if (!/^[0-9a-f]{40}$/.test(head)) return { checked: false, ok: false, ...base, reason: 'no head commit (pass head_sha or run in a git checkout)' };
+  const ctrf = readProjectFile(cwd, CTRF, CTRF_MAX_BYTES);
+  if (ctrf === null) return { checked: false, ok: false, ...base, reason: `${CTRF} not found` };
+  const subjectSha256 = createHash('sha256').update(ctrf).digest('hex');
+  const runIdArg = typeof a.run_id === 'string' && /^[0-9]+$/.test(a.run_id) ? a.run_id : null;
+  let pin: { runId: string; sourceRef: string };
+  if (runIdArg && typeof a.source_ref === 'string' && a.source_ref) pin = { runId: runIdArg, sourceRef: a.source_ref };
+  else {
+    const p = pinFromApi(cwd, repo, basename(signer), head, runIdArg);
+    if (typeof p === 'string') return { checked: false, ok: false, ...base, subjectSha256, reason: p };
+    pin = typeof a.source_ref === 'string' && a.source_ref ? { ...p, sourceRef: a.source_ref } : p;
+  }
+  const r = gh(['attestation', 'verify', join(cwd, CTRF), '--repo', repo, '--predicate-type', PREDICATE_TYPE, '--signer-workflow', signer, '--format', 'json'], cwd);
+  if (!r.ok) return { checked: true, ok: false, ...base, ...pin, subjectSha256, reason: r.err };
+  let out: unknown;
+  try { out = JSON.parse(r.out); } catch { return { checked: true, ok: false, ...base, ...pin, subjectSha256, reason: 'unreadable gh attestation verify output' }; }
+  return { checked: true, ...base, ...pin, subjectSha256, ...verdictFromAttestations(out, { ...pin, head }) };
+}
+
 function attestedStatus(a: Json): ToolResult {
   const cwd = resolve(String(a.cwd ?? process.cwd()));
   const summary = receiptSummary(cwd);
   if (!summary) return text('No receipt yet: call attested_run first.');
-  const repo = typeof a.repo === 'string' && a.repo ? a.repo : originRepo(cwd);
-  let attestation: Json;
-  if (spawnSync('gh', ['--version'], { encoding: 'utf8' }).status !== 0) {
-    attestation = { checked: false, reason: 'gh not available' };
-  } else if (!repo) {
-    attestation = { checked: false, reason: 'no GitHub repo (pass repo or set git remote origin)' };
-  } else {
-    const r = spawnSync('gh', ['attestation', 'verify', join(cwd, CTRF), '--repo', repo, '--predicate-type', PREDICATE_TYPE, '--format', 'json'], { cwd, encoding: 'utf8' });
-    attestation = r.status === 0
-      ? { checked: true, exists: true, repo }
-      : { checked: true, exists: false, repo, reason: (r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0] || `gh exited ${r.status}` };
-  }
-  return text({ ...summary, attestation });
+  return text({
+    verified: verifiedVerdict(cwd, a),
+    localReceipt: { unverified: true, note: `Read from ${RECEIPT} in the project. Not signed; any process that can write the project can change it. Only "verified" is a signed verdict.`, ...summary },
+  });
 }
 
+// Project files are read through readProjectFile: a symlink, a path outside the project, an oversized file, or a
+// malformed packet raises ProjectFileError, which is returned as a tool error.
 async function callTool(name: string, args: Json): Promise<ToolResult> {
   if (name === 'attested_run') return attestedRun(args);
   if (name === 'attested_packet') return attestedPacket(args);
@@ -179,7 +215,14 @@ async function handle(msg: { id?: string | number; method?: string; params?: Jso
       };
     } else if (method === 'ping') result = {};
     else if (method === 'tools/list') result = { tools: TOOLS };
-    else if (method === 'tools/call') result = await callTool(String(params.name), (params.arguments ?? {}) as Json);
+    else if (method === 'tools/call') {
+      try {
+        result = await callTool(String(params.name), (params.arguments ?? {}) as Json);
+      } catch (err) {
+        if (!(err instanceof ProjectFileError)) throw err;
+        result = text(err.message, true);
+      }
+    }
     else return send({ id, error: { code: -32601, message: `method not found: ${method}` } });
     send({ id, result });
   } catch (err) {
