@@ -73,8 +73,10 @@ test('attested_run red returns the packet, then green after the fix; attested_pa
   const none = (await c.call('tools/call', { name: 'attested_packet', arguments: { cwd: dir } })).result.content[0].text;
   assert.equal(none, 'No failure packet: the last run was PASSED.');
   const status = JSON.parse((await c.call('tools/call', { name: 'attested_status', arguments: { cwd: dir } })).result.content[0].text);
-  assert.equal(status.result, 'PASSED');
-  assert.equal(status.attestation.checked, false);
+  assert.equal(status.localReceipt.result, 'PASSED');
+  assert.equal(status.localReceipt.unverified, true);
+  assert.equal(status.verified.checked, false);
+  assert.equal(status.verified.ok, false);
   c.close();
 });
 

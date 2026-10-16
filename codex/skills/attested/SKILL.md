@@ -29,8 +29,9 @@ The attested MCP server gives you three tools: `attested_run`, `attested_packet`
    CI signs the receipt and posts the `attested` check; `attested verify` is the required check.
    ```
 
-6. After CI runs, `attested_status` reports whether a signed attestation exists for a
-   downloaded receipt. Local runs are never signed; only CI runs are.
+6. After CI runs, `attested_status` reports `verified`, the verdict from the signed attestation
+   for a downloaded receipt. Its `localReceipt` fields are unverified. Local runs are never signed;
+   only CI runs are.
 
 ## Rules
 
