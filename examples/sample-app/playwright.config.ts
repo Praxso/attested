@@ -9,6 +9,7 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }],
+    ['./forge-reporter.mjs'],
   ],
   use: {
     baseURL: 'http://localhost:4173',
