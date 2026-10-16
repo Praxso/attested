@@ -121,7 +121,7 @@ On red, `attested run` writes `attested/packet.json` (at most 12 KB, digest reco
 
 ## Agents: MCP server and skills
 
-`@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from the signed attestation accepted under the same run, ref, and head policy as `attested verify`; `localReceipt`: the project's own receipt fields, labelled unverified). The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, read the packet on red, fix, rerun, and put the receipt digest in the PR body.
+`@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from the signed attestation accepted under the same run, ref, and head policy as `attested verify`; `localReceipt`: the project's own receipt fields, labelled unverified). The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, and instead of taking or posting screenshots to show a change works; to read the packet on red, fix, rerun, and put the receipt digest in the PR body.
 
 Both packages are on npm at 0.1.0: [`@praxso/attested`](https://www.npmjs.com/package/@praxso/attested) and [`@praxso/attested-mcp`](https://www.npmjs.com/package/@praxso/attested-mcp). To run a local build instead, replace `npx -y @praxso/attested-mcp@0.1.0` below with `node /path/to/attested/packages/mcp/bin/attested-mcp.js` after `pnpm build`.
 
@@ -154,6 +154,19 @@ mkdir -p ~/.codex/skills && cp -R codex/skills/attested ~/.codex/skills/
 
 ```json
 { "servers": { "attested": { "type": "stdio", "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.0"] } } }
+```
+
+**Any agent, through repository instructions.** Codex, Cursor, Copilot, and Claude Code read a repository's `AGENTS.md` or `CLAUDE.md`. Paste this in so the rule applies to every agent in the repository, with or without the plugin:
+
+```markdown
+## Showing that a change works
+
+Never upload screenshots, recordings, or traces of this app to a public place, including a
+new repository, a gist, or an image host. To show a reviewer that a change works, run the
+tests through attested (the `attested_run` MCP tool, or
+`npx @praxso/attested run -- <test command>`), fix and rerun until the result is PASSED,
+and put the receipt digest in the pull request body. The traces and screenshots stay in the
+workflow run's artifact.
 ```
 
 ## What gets signed

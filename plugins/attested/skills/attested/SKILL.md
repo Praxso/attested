@@ -1,6 +1,6 @@
 ---
 name: attested
-description: Use before opening or updating a pull request in a repo with Playwright or CTRF tests. Runs the tests through attested, reads the failure packet on red, fixes, reruns until green, then opens the PR with the receipt digest.
+description: Use before opening or updating a pull request in a repo with Playwright or CTRF tests, and whenever you want to show a reviewer that a change works or would otherwise take, upload, or link screenshots, recordings, or traces. Runs the tests through attested, reads the failure packet on red, fixes, reruns until green, then opens the PR with the receipt digest.
 ---
 
 # attested: prove the tests pass before you open the PR
