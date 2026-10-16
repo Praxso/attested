@@ -71,9 +71,13 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 
    Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
 
-2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It needs `contents: read`, `id-token: write`, `attestations: write`, and `checks: write`, and runs the tests, writes and signs the receipt, uploads the artifact, and posts the `attested` check.
+2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It has two jobs. `attested run` runs your tests with a read-only token and uploads the results. `attested sign` has `id-token: write`, `attestations: write`, and `checks: write`; it runs only attested from the base commit, never your PR's code, rebuilds the receipt from the results (`attested attest --from-results`), signs it, and posts the `attested` check.
 
 3. Require verification. The hardened form is [`.github/workflows/attested-verify.yml`](.github/workflows/attested-verify.yml) required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)); it is written for this repository, so adjust the repository names. The minimal form, a job plus a repository ruleset that requires the check name, is in [docs/ruleset.md](docs/ruleset.md) with the reason for the head rule and why a required check name alone is weak.
+
+## What a receipt proves
+
+A receipt proves this commit's own test suite reported this result, signed by a job that ran no PR code; it does not prove the change is correct. A pull request can still weaken its own tests: delete them, skip them, change the config, or make a test write a passing `ctrf.json`. Review test changes like any other code. Planned follow-ups: a check that fails when tests disappear compared with the base branch's last receipt, and CODEOWNERS review for test files.
 
 ## What the required check guarantees
 
@@ -86,11 +90,12 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 ```
 attested run [--expect-sha <sha>] [--allow-dirty] [--target-url <url>] [--health-path /healthz] [--ctrf attested/ctrf.json] [--output-dir test-results] [--packet attested/packet.json] -- <test command>
 attested attest [--receipt attested/receipt.json] [--ctrf attested/ctrf.json]
+attested attest --from-results <dir> [--out signed/attested] [--rerun <command>]
 attested check [--artifact-url <url>] [--artifact-name <name>] [--attestation-url <url>]
 ```
 
 - **`attested run`** refuses to start tests when `HEAD` differs from `--expect-sha`, when the tree is dirty without `--allow-dirty`, or, with `--target-url`, when `<url>/healthz` does not report a `sha` equal to the expected one. It writes `attested/receipt.json` and exits with the test command's exit code. It records `source.commit` and, on `pull_request`, `source.headCommit` (the PR head; `source.commit` is the synthetic merge commit there). On red it writes the failure packet.
-- **`attested attest`** re-checks the subject digest and hands the predicate to the `actions/attest` steps that sign it. Outside Actions it warns that the receipt is unsigned.
+- **`attested attest`** re-checks the subject digest and hands the predicate to the `actions/attest` steps that sign it. Outside Actions it warns that the receipt is unsigned. With `--from-results <dir>` it builds the receipt itself from a downloaded results directory (`attested/ctrf.json`, `test-results/`, the test config), treating every file as data: digests are recomputed, `source.commit` comes from `GITHUB_SHA`, `source.headCommit` from the event payload, `source.dirty` is `null`, and nothing the test job wrote about itself is read. This is what the sign job runs.
 - **`attested check`** posts one check run named `attested`: `PASSED` is success, `FAILED` is failure, anything else is neutral. On a forked PR, or when the token cannot create check runs (HTTP 403), it prints the same summary to the job log and step summary with a one-line notice and exits 0.
 - **`attested verify`** is the GitHub Action at the root of this repo (`action.yml`). It fails closed, one line per rule: `no receipt`, `no attestation found`, `predicate type mismatch`, `verification failed`, `SHA mismatch`, `result FAILED`, `unsigned run from fork`. Inputs: `subject-path`, `repo`, `signer-workflow`, `head-sha`, `allow-unsigned` (forks pass with a `neutral:` warning).
 
