@@ -2,7 +2,7 @@
   "mcpServers": {
     "attested": {
       "command": "npx",
-      "args": ["-y", "@praxso/attested-mcp@0.1.0"]
+      "args": ["-y", "@praxso/attested-mcp@0.1.1"]
     }
   }
 }
