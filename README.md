@@ -87,7 +87,7 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 
    Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
 
-2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It has two jobs. `attested run` runs your tests with a read-only token and uploads the results. `attested sign` has `id-token: write`, `attestations: write`, and `checks: write`; it runs only attested from the base commit, never your PR's code, rebuilds the receipt from the results (`attested attest --from-results`), signs it, and posts the `attested` check.
+2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It has two jobs. `attested run` runs your tests with a read-only token and uploads the results. `attested sign` has `id-token: write`, `attestations: write`, and `checks: write`; it runs only attested from the default branch head, never your PR's code, rebuilds the receipt from the results (`attested attest --from-results`), signs it, and posts the `attested` check.
 
 3. Require verification. The hardened form is [`.github/workflows/attested-verify.yml`](.github/workflows/attested-verify.yml) required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)); it is written for this repository, so adjust the repository names. The minimal form, a job plus a repository ruleset that requires the check name, is in [docs/ruleset.md](docs/ruleset.md) with the reason for the head rule and why a required check name alone is weak.
 
