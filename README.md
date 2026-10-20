@@ -17,7 +17,13 @@ In a repository with Playwright tests, add the CTRF reporter:
 npm i -D playwright-ctrf-json-reporter
 ```
 
-Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, commit, then run your tests through `attested`:
+In `playwright.config.ts`, add the CTRF reporter to `reporter`; the default `reporter: 'html'` becomes a list:
+
+```ts
+reporter: [['html'], ['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]],
+```
+
+Add `attested/` to `.gitignore`, commit, then run your tests through `attested`:
 
 ```bash
 npx @praxso/attested run -- npx playwright test
