@@ -33,6 +33,8 @@ attest options:
 check options (posts the "attested" check run; needs GITHUB_TOKEN with checks: write):
   --artifact-url <url>       link to the uploaded workflow artifact
   --artifact-name <name>     workflow artifact name, for the paste-able verify command
+  --evidence-name <name>     artifact holding the traces, videos and screenshots, for the paste-able download
+                             command (default: results-<sha> when --artifact-name is attested-<sha>)
   --attestation-url <url>    link to the receipt attestation
   --receipt <path>, --packet <path>
 `;
@@ -97,6 +99,7 @@ async function main(argv: string[]): Promise<number> {
       else if (a === '--packet') o.packet = takeValue(rest, i++, a);
       else if (a === '--artifact-url') o.artifactUrl = optValue(rest, i++, a);
       else if (a === '--artifact-name') o.artifactName = optValue(rest, i++, a);
+      else if (a === '--evidence-name') o.evidenceName = optValue(rest, i++, a);
       else if (a === '--attestation-url') o.attestationUrl = optValue(rest, i++, a);
       else throw new AttestedError(`unknown option ${a}`);
     }
