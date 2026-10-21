@@ -1,7 +1,7 @@
 {
   "name": "attested",
   "displayName": "attested",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run tests into a Sigstore-signed receipt before opening a PR; read a redacted failure packet on red, fix, rerun. Evidence stays in workflow artifacts; no images are posted.",
   "author": { "name": "Praxso", "url": "https://github.com/Praxso" },
   "homepage": "https://github.com/Praxso/attested",
