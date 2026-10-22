@@ -11,6 +11,17 @@ https://github.com/user-attachments/assets/4b61bbe8-6c4f-4132-aee0-f8cb9aede34f
 
 No custom runner, no hosted service, no images posted anywhere.
 
+## Swap screenshots for receipts
+
+Your tests already record proof that your app works: screenshots, videos, and traces of every click. attested keeps that proof in the CI run that produced it and gives the pull request a signed receipt instead. With the receipt you can:
+
+- **read the verdict** for this exact commit in the `attested` check;
+- **fetch the originals**: the check prints the `gh run download` command for the run's screenshots, videos and traces;
+- **confirm nothing changed**: the receipt holds every file's sha256, and the check's one-line `shasum -a 256 -c` compares them all; `gh attestation verify` checks the receipt's own signature;
+- **block merges without one**: the required `attested verify` check fails unless a signed receipt for the PR head says the tests passed.
+
+A receipt proves the commit's own tests reported the result, not that the change is correct; see [What a receipt proves](#what-a-receipt-proves).
+
 ## Quickstart
 
 In a repository with Playwright tests, add the CTRF reporter:
@@ -128,6 +139,10 @@ attested check [--artifact-url <url>] [--artifact-name <name>] [--attestation-ur
 On red, `attested run` writes `attested/packet.json` (at most 12 KB, digest recorded in the receipt with kind `packet`, embedded in the `attested` check). It holds the failing tests grouped by file, line, and message (ANSI stripped, first 20 stack frames, evidence paths and digests), console errors and warnings grouped with counts, failed requests (method, path, status), and the exact rerun command. Console and network data come from the Playwright trace. URLs lose their query strings and fragments; bearer tokens, `key=`/`token=`/`password=` values, common token formats, and emails are masked; environment variables are never read into it. Over 12 KB, stacks are cut to five frames and then lists are cut from the tail (tests alphabetically, console and network most recent first) and `truncated` says what was cut.
 
 ## Agents: MCP server and skills
+
+A real Claude Code session with the attested MCP server: a test fails, the failure packet says what broke, the agent fixes it and reruns, and the receipt's evidence checks out (about a minute):
+
+https://github.com/user-attachments/assets/372ac548-e303-449f-98c0-5166b7a361f3
 
 `@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from the signed attestation accepted under the same run, ref, and head policy as `attested verify`; `localReceipt`: the project's own receipt fields, labelled unverified). The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, and instead of taking or posting screenshots to show a change works; to read the packet on red, fix, rerun, and put the receipt digest in the PR body.
 

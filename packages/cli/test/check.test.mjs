@@ -45,7 +45,7 @@ function api(status) {
 
 function run(dir, apiUrl) {
   return new Promise((ok) => {
-    const env = { ...process.env, GITHUB_TOKEN: 'test-token', GITHUB_REPOSITORY: 'o/r', GITHUB_API_URL: apiUrl, GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_SHA: MERGE, GITHUB_STEP_SUMMARY: '' };
+    const env = { ...process.env, GITHUB_TOKEN: 'test-token', GITHUB_REPOSITORY: 'o/r', GITHUB_API_URL: apiUrl, GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_SHA: MERGE, GITHUB_RUN_ID: '42', GITHUB_STEP_SUMMARY: '' };
     const child = spawn(process.execPath, [BIN, 'check', '--artifact-url', 'https://example.test/artifact', '--artifact-name', 'attested-x'], { cwd: dir, env });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
@@ -73,6 +73,9 @@ for (const [result, conclusion] of [['PASSED', 'success'], ['FAILED', 'failure']
     assert.equal('images' in body.output, false);
     assert.match(body.output.summary, /gh attestation verify attested-receipt\/attested\/ctrf.json --repo o\/r --predicate-type https:\/\/praxso.ai\/attested\/v0.1/);
     assert.match(body.output.summary, /\[workflow artifact\]\(https:\/\/example.test\/artifact\)/);
+    // The evidence download names the bundled workflow's results artifact and checks every file against the receipt.
+    assert.match(body.output.summary, /gh run download 42 --repo o\/r --name results-x --dir attested-evidence/);
+    assert.match(body.output.summary, /\| shasum -a 256 -c/);
   });
 }
 

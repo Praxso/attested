@@ -9,11 +9,12 @@ export type CheckOptions = {
   packet: string;
   artifactUrl: string | null;
   artifactName: string | null;
+  evidenceName: string | null;
   attestationUrl: string | null;
 };
 
 export function defaultCheckOptions(): CheckOptions {
-  return { receipt: DEFAULTS.receipt, packet: DEFAULTS.packet, artifactUrl: null, artifactName: null, attestationUrl: null };
+  return { receipt: DEFAULTS.receipt, packet: DEFAULTS.packet, artifactUrl: null, artifactName: null, evidenceName: null, attestationUrl: null };
 }
 
 type Conclusion = 'success' | 'failure' | 'neutral';
@@ -64,6 +65,16 @@ export function buildSummary(receipt: Receipt, packet: string | null, opts: Chec
   if (runId && opts.artifactName) lines.push(`gh run download ${runId} --repo ${repo} --name ${opts.artifactName} --dir attested-receipt`);
   lines.push(`gh attestation verify attested-receipt/attested/ctrf.json --repo ${repo} --predicate-type ${PREDICATE_TYPE} --signer-workflow ${signer}`);
   lines.push('```');
+  // The evidence travels in its own artifact. Its name defaults to the bundled workflow's (results-<sha> beside
+  // attested-<sha>), as the signer workflow above defaults to the bundled attested.yml.
+  const evidence = opts.evidenceName ?? (opts.artifactName?.startsWith('attested-') ? `results-${opts.artifactName.slice('attested-'.length)}` : null);
+  if (runId && evidence) {
+    lines.push('', 'Get the evidence (screenshots, videos, traces) and check that each file is the one this receipt fingerprints:', '', '```bash');
+    lines.push(`gh run download ${runId} --repo ${repo} --name ${evidence} --dir attested-evidence`);
+    lines.push(`cd attested-evidence && jq -r '.predicate.artifacts[] | "\\(.sha256)  \\(.path)"' ../attested-receipt/attested/receipt.json | shasum -a 256 -c`);
+    lines.push('```');
+    lines.push('', "Artifacts follow this repository's artifact retention (90 days by default); the receipt's digests and signature outlast them.");
+  }
   if (tr.failedTests.length && packet) {
     lines.push('', 'Failure packet (`attested/packet.json`):', '', '```json', packet.trimEnd(), '```');
   } else if (tr.failedTests.length) {
