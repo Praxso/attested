@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DEFAULTS } from './constants.js';
 import { assemble, writeReceipt } from './assemble.js';
+import { clean, stripUrl } from './redact.js';
 import { rerunCommand } from './packet.js';
 import { AttestedError, gitDirty, gitHead, gitRef, info, readEvent, relPath } from './util.js';
 
@@ -42,6 +43,11 @@ export function defaultRunOptions(): RunOptions {
 
 type Target = { buildSha: string | null; url: string | null; health?: unknown };
 
+// A target URL as written into the receipt: no credentials, query, or fragment; redacted and bounded.
+export function publicUrl(u: string): string {
+  return clean(stripUrl(u).replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1'), 300);
+}
+
 // Probe <url><healthPath> and require a `sha` field equal to expectedSha. Any failure is fatal:
 // a receipt must not claim tests ran against a deployment it cannot identify.
 async function probeTarget(url: string, healthPath: string, expectedSha: string): Promise<Target> {
@@ -63,7 +69,8 @@ async function probeTarget(url: string, healthPath: string, expectedSha: string)
   if (buildSha !== expectedSha) {
     throw new AttestedError(`attested run: target ${target} is built from ${buildSha}, expected ${expectedSha}; refusing to run tests`);
   }
-  return { buildSha, url, health: { probed: target, status: res.status, body } };
+  // Allowlisted fields only: the health body can carry anything, so it is never copied into the receipt.
+  return { buildSha, url: publicUrl(url), health: { probed: publicUrl(target), status: res.status } };
 }
 
 export async function run(opts: RunOptions): Promise<number> {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, extname, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -8,9 +8,20 @@ export class AttestedError extends Error {}
 // Largest evidence file (trace, video, screenshot, report) that is hashed into a receipt.
 export const MAX_EVIDENCE_BYTES = 512 * 1024 * 1024;
 
+// Opens a regular file without following a symlink in its last component.
+function openFile(path: string, what = 'file'): number {
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw new AttestedError(`attested: ${what} ${path} is a symlink; refusing to read it`);
+    throw err;
+  }
+  if (!fstatSync(fd).isFile()) { closeSync(fd); throw new AttestedError(`attested: ${what} ${path} is not a regular file; refusing to read it`); }
+  return fd;
+}
+
 // Hashes in chunks, so a large evidence file is never held in memory; refuses files over `max` bytes.
 export function sha256File(path: string, max = MAX_EVIDENCE_BYTES): { sha256: string; bytes: number } {
-  const fd = openSync(path, 'r');
+  const fd = openFile(path);
   try {
     const size = fstatSync(fd).size;
     if (size > max) throw new AttestedError(`attested: ${path} is ${size} bytes, over the ${max}-byte limit for evidence files`);
@@ -37,6 +48,36 @@ export function checkInside(root: string, path: string, what: string): boolean {
   const rel = relative(realpathSync(root), realpathSync(path));
   if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) throw new AttestedError(`attested: ${what} ${path} resolves outside ${root}; refusing to read it`);
   return true;
+}
+
+// Reads `path` (under `root`) through one descriptor: opened first, then checked with checkInside and required to be the
+// same file the path names now, and read with `max` enforced on the bytes actually read. What is checked, read, and
+// hashed is one object, even if the path is replaced or the file grows meanwhile. Returns null when it does not exist.
+// `afterOpen` is a test seam for changing the file between opening and validation.
+export function readInside(root: string, path: string, max: number, what: string, afterOpen?: () => void): Buffer | null {
+  let fd: number;
+  try { fd = openFile(path, what); } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    afterOpen?.();
+    if (!checkInside(root, path, what)) throw new AttestedError(`attested: ${what} ${path} was removed while being read; refusing to read it`);
+    const st = fstatSync(fd);
+    const now = lstatSync(path);
+    if (st.dev !== now.dev || st.ino !== now.ino) throw new AttestedError(`attested: ${what} ${path} was replaced while being read; refusing to read it`);
+    const chunks: Buffer[] = [];
+    const chunk = Buffer.alloc(1024 * 1024);
+    let bytes = 0;
+    for (let n; (n = readSync(fd, chunk, 0, chunk.length, null)) > 0;) {
+      bytes += n;
+      if (bytes > max) throw new AttestedError(`attested: ${what} ${path} is over the ${max}-byte limit`);
+      chunks.push(Buffer.from(chunk.subarray(0, n)));
+    }
+    return Buffer.concat(chunks);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function walk(dir: string): string[] {

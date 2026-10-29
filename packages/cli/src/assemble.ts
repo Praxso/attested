@@ -1,9 +1,10 @@
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { buildPacket, serializePacket, type Packet } from './packet.js';
-import { buildReceipt, testResultFromCtrf, toolInfo, type Artifact, type Ctrf, type Receipt, type ReceiptPredicate } from './receipt.js';
+import { buildReceipt, testResultFromCtrf, toolInfo, validateCtrf, type Artifact, type Ctrf, type Receipt, type ReceiptPredicate } from './receipt.js';
 import { clean } from './redact.js';
-import { AttestedError, checkInside, classify, info, relPath, runUrl, sha256File, walk } from './util.js';
+import { AttestedError, checkInside, classify, info, readInside, relPath, runUrl, sha256File, walk } from './util.js';
 
 // Largest ctrf.json that is parsed. CTRF for tens of thousands of tests is a few MB.
 export const MAX_CTRF_BYTES = 32 * 1024 * 1024;
@@ -27,6 +28,18 @@ export function ctrfMeta(ctrf: Ctrf): ReceiptPredicate['ctrf'] {
   return { specVersion: str(ctrf.specVersion, 32), tool, summary };
 }
 
+// Longest file path or configuration name written into the signed predicate.
+const MAX_PUBLIC_PATH = 1000;
+
+// A path as it is written into the signed, public predicate. Paths must stay exact so the evidence can be checked
+// against them, so a path that redaction would change (it looks like it holds a secret or an email) or that is too
+// long is refused rather than rewritten.
+export function publicPath(root: string, file: string, who: string): string {
+  const path = relPath(root, file);
+  if (clean(path, MAX_PUBLIC_PATH) !== path) throw new AttestedError(`${who}: refusing to publish the path ${clean(path, 200)}: it is over ${MAX_PUBLIC_PATH} characters or looks like it contains a secret or an email; rename it`);
+  return path;
+}
+
 export type Assembled = {
   ctrf: Ctrf;
   subject: { sha256: string; bytes: number };
@@ -43,21 +56,25 @@ export function assemble(root: string, o: { ctrf: string; outputDir: string; con
   if (!checkInside(root, ctrfPath, 'CTRF report')) throw new AttestedError(`${o.who}: CTRF report not found at ${o.ctrf} (configure the CTRF reporter or pass --ctrf)`);
   const size = statSync(ctrfPath).size;
   if (size > MAX_CTRF_BYTES) throw new AttestedError(`${o.who}: ${o.ctrf} is ${size} bytes, over the ${MAX_CTRF_BYTES}-byte limit for CTRF reports`);
+  // One descriptor: the bytes parsed are the bytes hashed into the subject, whatever happens to the path meanwhile.
+  const bytes = readInside(root, ctrfPath, MAX_CTRF_BYTES, 'CTRF report');
+  if (!bytes) throw new AttestedError(`${o.who}: CTRF report not found at ${o.ctrf}`);
   let ctrf: Ctrf;
-  try { ctrf = JSON.parse(readFileSync(ctrfPath, 'utf8')) as Ctrf; } catch { throw new AttestedError(`${o.who}: ${o.ctrf} is not valid JSON`); }
-  if (!ctrf || typeof ctrf !== 'object' || !ctrf.results || typeof ctrf.results !== 'object') throw new AttestedError(`${o.who}: ${o.ctrf} is not a CTRF report (missing "results")`);
+  try { ctrf = JSON.parse(bytes.toString('utf8')) as Ctrf; } catch { throw new AttestedError(`${o.who}: ${o.ctrf} is not valid JSON`); }
+  const invalid = validateCtrf(ctrf);
+  if (invalid) throw new AttestedError(`${o.who}: ${o.ctrf} is not a CTRF report (${invalid})`);
 
-  const subject = sha256File(ctrfPath, MAX_CTRF_BYTES);
-  const artifacts: Artifact[] = [{ path: relPath(root, ctrfPath), ...subject, kind: 'report' }];
+  const subject = { sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+  const artifacts: Artifact[] = [{ path: publicPath(root, ctrfPath, o.who), ...subject, kind: 'report' }];
   const outputDir = resolve(root, o.outputDir);
   if (checkInside(root, outputDir, 'output directory')) {
-    for (const file of walk(outputDir)) artifacts.push({ path: relPath(root, file), ...sha256File(file), kind: classify(file) });
+    for (const file of walk(outputDir)) artifacts.push({ path: publicPath(root, file, o.who), ...sha256File(file), kind: classify(file) });
   }
 
   const configuration: ReceiptPredicate['testResult']['configuration'] = [];
   const configPath = o.config ?? ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs'].find((p) => checkInside(root, resolve(root, p), 'test config')) ?? null;
-  if (configPath && checkInside(root, resolve(root, configPath), 'test config')) configuration.push({ name: configPath, digest: { sha256: sha256File(resolve(root, configPath)).sha256 } });
-  if (process.env.GITHUB_WORKFLOW_REF) configuration.push({ name: process.env.GITHUB_WORKFLOW_REF, digest: { gitCommit: process.env.GITHUB_SHA ?? '' } });
+  if (configPath && checkInside(root, resolve(root, configPath), 'test config')) configuration.push({ name: publicPath(root, resolve(root, configPath), o.who), digest: { sha256: sha256File(resolve(root, configPath)).sha256 } });
+  if (process.env.GITHUB_WORKFLOW_REF) configuration.push({ name: clean(process.env.GITHUB_WORKFLOW_REF, MAX_PUBLIC_PATH), digest: { gitCommit: process.env.GITHUB_SHA ?? '' } });
 
   const testResult = testResultFromCtrf(ctrf, configuration, runUrl());
   const packet = testResult.result === 'FAILED' ? buildPacket(ctrf, artifacts, root, o.rerun) : null;

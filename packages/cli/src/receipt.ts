@@ -37,10 +37,24 @@ export type Ctrf = {
   specVersion?: string;
   results: {
     tool?: unknown;
-    summary?: { tests?: number; passed?: number; failed?: number; skipped?: number; pending?: number; other?: number };
-    tests?: Array<{ name: string; status: string; suite?: string; filePath?: string }>;
+    summary?: { tests?: number; passed?: number; failed?: number; skipped?: number; pending?: number; other?: number; flaky?: number };
+    tests?: Array<{ name: string; status: string; suite?: string; filePath?: string; flaky?: boolean }>;
   };
 };
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+// Why `ctrf` cannot be judged, or null when it can. `results` must be an object with a `tests` array whose entries all
+// carry a string name and status, and `summary`, when present, must be an object. An empty `tests` array is valid.
+export function validateCtrf(ctrf: unknown): string | null {
+  if (!isObject(ctrf) || !isObject(ctrf.results)) return 'missing "results"';
+  const { tests, summary } = ctrf.results;
+  if (!Array.isArray(tests)) return '"results.tests" is not an array';
+  const bad = tests.findIndex((t) => !isObject(t) || typeof t.name !== 'string' || typeof t.status !== 'string');
+  if (bad >= 0) return `"results.tests[${bad}]" has no string name and status`;
+  if (summary !== undefined && !isObject(summary)) return '"results.summary" is not an object';
+  return null;
+}
 
 export function testNameOf(t: { name: string; suite?: string; filePath?: string }): string {
   const prefix = t.suite ?? t.filePath;
@@ -53,15 +67,19 @@ const nameOf = (t: { name: string; suite?: string; filePath?: string }) => clean
 
 export function testResultFromCtrf(ctrf: Ctrf, configuration: TestResultPredicate['configuration'], url: string | null): TestResultPredicate {
   const tests = Array.isArray(ctrf.results.tests) ? ctrf.results.tests.filter((t) => t && typeof t === 'object') : [];
-  const passedTests = tests.filter((t) => t.status === 'passed').map(nameOf);
+  // A passed test that CTRF marks flaky (passed on a retry) is warned, not passed.
+  const flaky = (t: { status: string; flaky?: boolean }) => t.status === 'passed' && t.flaky === true;
+  const passedTests = tests.filter((t) => t.status === 'passed' && !flaky(t)).map(nameOf);
   const failedTests = tests.filter((t) => t.status === 'failed').map(nameOf);
   // CTRF has no "warned" status; flaky/other/skipped/pending land here so nothing is silently dropped.
-  const warnedTests = tests.filter((t) => !['passed', 'failed'].includes(t.status)).map((t) => `${nameOf(t)} [${clean(t.status, 20)}]`);
+  const warnedTests = tests.filter((t) => t.status !== 'failed' && (t.status !== 'passed' || flaky(t)))
+    .map((t) => `${nameOf(t)} [${flaky(t) ? 'flaky' : clean(t.status, 20)}]`);
   const summary = ctrf.results.summary ?? {};
+  const summaryFlaky = typeof summary.flaky === 'number' && summary.flaky > 0;
   // FAILED if either the summary or any individual test reports a failure. A summary failed count that is present but
   // not the number 0 counts as a failure, so a malformed summary cannot hide one.
   const failed = failedTests.length > 0 || (summary.failed !== undefined && summary.failed !== 0);
-  const result: TestResultPredicate['result'] = failed ? 'FAILED' : warnedTests.length > 0 ? 'WARNED' : 'PASSED';
+  const result: TestResultPredicate['result'] = failed ? 'FAILED' : warnedTests.length > 0 || summaryFlaky ? 'WARNED' : 'PASSED';
   const tr: TestResultPredicate = { result, configuration, passedTests, warnedTests, failedTests };
   if (url) tr.url = url;
   return tr;
