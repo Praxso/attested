@@ -1,11 +1,13 @@
 // attested MCP server: newline-delimited JSON-RPC 2.0 over stdio, no SDK and no runtime dependencies beyond the attested CLI.
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
-  attestedCommand, PACKET_MAX_BYTES, PREDICATE_TYPE, ProjectFileError, readProjectFile, readProjectJson, RECEIPT_MAX_BYTES,
-  validatePacket, verdictFromAttestations, VERSION,
+  applyRunConclusion, attestedCommand, CliNotFoundError, PACKET_MAX_BYTES, PREDICATE_TYPE, ProjectFileError, readProjectBytes,
+  readProjectJson, RECEIPT_MAX_BYTES, runConclusionFromJobs, validatePacket, verdictFromAttestations, VERSION,
 } from './lib.js';
 
 const CTRF_MAX_BYTES = 32 * 1024 * 1024;
@@ -160,7 +162,7 @@ function verifiedVerdict(cwd: string, a: Json): Json {
   const head = headArg ?? '';
   const base = { repo, signerWorkflow: signer, head };
   if (!/^[0-9a-f]{40}$/.test(head)) return { checked: false, ok: false, ...base, reason: 'no head commit (pass head_sha or run in a git checkout)' };
-  const ctrf = readProjectFile(cwd, CTRF, CTRF_MAX_BYTES);
+  const ctrf = readProjectBytes(cwd, CTRF, CTRF_MAX_BYTES);
   if (ctrf === null) return { checked: false, ok: false, ...base, reason: `${CTRF} not found` };
   const subjectSha256 = createHash('sha256').update(ctrf).digest('hex');
   const runIdArg = typeof a.run_id === 'string' && /^[0-9]+$/.test(a.run_id) ? a.run_id : null;
@@ -171,11 +173,27 @@ function verifiedVerdict(cwd: string, a: Json): Json {
     if (typeof p === 'string') return { checked: false, ok: false, ...base, subjectSha256, reason: p };
     pin = typeof a.source_ref === 'string' && a.source_ref ? { ...p, sourceRef: a.source_ref } : p;
   }
-  const r = gh(['attestation', 'verify', join(cwd, CTRF), '--repo', repo, '--predicate-type', PREDICATE_TYPE, '--signer-workflow', signer, '--format', 'json'], cwd);
+  // gh verifies a private snapshot of the bytes that were read and hashed, never the project path again.
+  const snapshotDir = mkdtempSync(join(tmpdir(), 'attested-mcp-'));
+  let r: ReturnType<typeof gh>;
+  try {
+    const snapshot = join(snapshotDir, 'ctrf.json');
+    writeFileSync(snapshot, ctrf, { mode: 0o600, flag: 'wx' });
+    r = gh(['attestation', 'verify', snapshot, '--repo', repo, '--predicate-type', PREDICATE_TYPE, '--signer-workflow', signer, '--format', 'json'], cwd);
+  } finally {
+    rmSync(snapshotDir, { recursive: true, force: true });
+  }
   if (!r.ok) return { checked: true, ok: false, ...base, ...pin, subjectSha256, reason: r.err };
   let out: unknown;
   try { out = JSON.parse(r.out); } catch { return { checked: true, ok: false, ...base, ...pin, subjectSha256, reason: 'unreadable gh attestation verify output' }; }
-  return { checked: true, ...base, ...pin, subjectSha256, ...verdictFromAttestations(out, { ...pin, head }) };
+  const verdict = verdictFromAttestations(out, { ...pin, head });
+  if (!verdict.ok) return { checked: true, ...base, ...pin, subjectSha256, ...verdict };
+  // The job that ran the tests must agree with the signed result, as in the required check.
+  const jobs = gh(['api', `repos/${repo}/actions/runs/${pin.runId}/jobs?filter=latest&per_page=100`], cwd);
+  let body: unknown = null;
+  if (jobs.ok) { try { body = JSON.parse(jobs.out); } catch { /* reported below */ } }
+  const run = jobs.ok ? runConclusionFromJobs(body) : { reason: `could not read the jobs of run ${pin.runId} (${jobs.err})` };
+  return { checked: true, ...base, ...pin, subjectSha256, ...applyRunConclusion(verdict, run), ...('conclusion' in run ? { runConclusion: run.conclusion } : {}) };
 }
 
 function attestedStatus(a: Json): ToolResult {
@@ -188,8 +206,9 @@ function attestedStatus(a: Json): ToolResult {
   });
 }
 
-// Project files are read through readProjectFile: a symlink, a path outside the project, an oversized file, or a
-// malformed packet raises ProjectFileError, which is returned as a tool error.
+// Project files are read through readProjectBytes: a symlink, a path outside the project, an oversized or changing
+// file, or a malformed packet raises ProjectFileError; a missing bundled CLI raises CliNotFoundError. Both are returned
+// as tool errors.
 async function callTool(name: string, args: Json): Promise<ToolResult> {
   if (name === 'attested_run') return attestedRun(args);
   if (name === 'attested_packet') return attestedPacket(args);
@@ -219,7 +238,7 @@ async function handle(msg: { id?: string | number; method?: string; params?: Jso
       try {
         result = await callTool(String(params.name), (params.arguments ?? {}) as Json);
       } catch (err) {
-        if (!(err instanceof ProjectFileError)) throw err;
+        if (!(err instanceof ProjectFileError) && !(err instanceof CliNotFoundError)) throw err;
         result = text(err.message, true);
       }
     }
