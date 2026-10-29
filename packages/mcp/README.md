@@ -8,7 +8,7 @@ MCP server for [attested](https://github.com/Praxso/attested): coding agents run
 - `attested_packet`: returns the last failure packet, after checking its shape. A packet that is a symlink or resolves outside the project is refused.
 - `attested_status`: returns `verified`, the verdict from the signed attestation that `gh attestation verify` accepts under the required check's policy (the attesting run and its ref, from the GitHub API or `run_id`/`source_ref`, and the head commit), and `localReceipt`, the project's own receipt fields, labelled unverified.
 
-The server runs the attested CLI bundled with it. To run a different build, set `ATTESTED_BIN` in the server's own MCP configuration; a `node_modules/.bin/attested` in the project is never used. If the bundled CLI cannot be resolved, it runs `npx -y @praxso/attested@<this package's version>`.
+The server runs the attested CLI bundled with it. To run a different build, set `ATTESTED_BIN` in the server's own MCP configuration; a `node_modules/.bin/attested` in the project is never used. If the bundled CLI cannot be resolved, `attested_run` fails with an error saying so; it never falls back to another version.
 
 ## Set up
 
