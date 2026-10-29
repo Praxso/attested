@@ -37,6 +37,8 @@ pass() { echo "attested verify: PASS: $1"; [ -n "${GITHUB_STEP_SUMMARY:-}" ] && 
 
 unsigned_fork() {
   local msg="unsigned run from fork $HEAD_REPO: forked pull requests get no OIDC token, so the run could not be signed and no attestation exists"
+  # Allowing an unsigned receipt never allows a test command known to have failed.
+  [ "$RUN_CONCLUSION" = failure ] && fail "test command failed: the attested run job in run $RUN_ID failed at its test step ($msg)"
   if [ "$ALLOW_UNSIGNED" = "true" ]; then
     # A job cannot conclude "neutral"; it passes with a warning annotation, which is the closest Actions offers.
     echo "::warning title=attested verify::neutral: $msg (allowed by allow-unsigned: true)"
@@ -87,7 +89,12 @@ fi
 TYPE="$(jq -r '.predicateType' <<<"$STMT")"
 COMMIT="$(jq -r '.predicate.source.commit // empty' <<<"$STMT")"
 HEADC="$(jq -r '.predicate.source.headCommit // empty' <<<"$STMT")"
-RESULT="$(jq -r '.predicate.testResult.result // empty' <<<"$STMT")"
+# The enum is checked on the JSON value itself: command substitution strips trailing newlines, so "PASSED\n" must not
+# reach the shell as PASSED. A missing or empty result is "", any other value "unknown:<json>".
+RESULT="$(jq -r '.predicate.testResult.result as $r
+  | if $r == null or $r == "" then ""
+    elif ($r | type) == "string" and ($r == "PASSED" or $r == "WARNED" or $r == "FAILED") then $r
+    else "unknown:" + ($r | tojson) end' <<<"$STMT")"
 
 [ "$TYPE" = "$PREDICATE_TYPE" ] || fail "predicate type mismatch: got $TYPE, want $PREDICATE_TYPE"
 # Head rule: pull_request runs check out and attest the synthetic merge commit (refs/pull/N/merge), which is not on the
@@ -100,7 +107,7 @@ case "$RESULT" in
   FAILED) fail "result FAILED: the signed receipt for $HEAD_SHA records failing tests ($(jq -r '.predicate.testResult.failedTests // [] | join("; ")' <<<"$STMT" | cut -c1-200))" ;;
   PASSED|WARNED) ;;
   "") fail "result missing: the signed receipt for $HEAD_SHA records no test result" ;;
-  *) fail "result unknown: the signed receipt for $HEAD_SHA records result '${RESULT:0:40}', not PASSED, WARNED, or FAILED" ;;
+  *) R="${RESULT#unknown:}"; fail "result unknown: the signed receipt for $HEAD_SHA records result ${R:0:40}, not PASSED, WARNED, or FAILED" ;;
 esac
 [ "$RUN_CONCLUSION" = failure ] && fail "test command failed: the attested run job in run $RUN_ID failed at its test step, but the receipt says $RESULT"
 [ "$RESULT" = "WARNED" ] && echo "::warning title=attested verify::result WARNED (passing with warnings, so not blocking)"

@@ -115,6 +115,14 @@ test('forked PR with allow-unsigned is neutral (exit 0 with a warning)', () => {
   assert.match(r.out, /::warning title=attested verify::neutral: unsigned run from fork/);
 });
 
+test('allow-unsigned never passes a fork whose test command failed', () => {
+  for (const subject of [true, false]) {
+    const r = setup({ verifyErr: 'Error: HTTP 404: Not Found', event: fork, subject })({ ALLOW_UNSIGNED: 'true', ATTESTED_RUN_CONCLUSION: 'failure' });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /FAIL: test command failed: .*unsigned run from fork someone\/r/);
+  }
+});
+
 // Side-branch forgery: the same ctrf.json bytes signed PASSED by workflow_dispatch from a branch with a modified attested.yml.
 const forged = attestation({ result: 'PASSED', run: '777', ref: 'refs/heads/side' });
 
@@ -175,7 +183,7 @@ test('a missing result fails closed', () => {
 });
 
 test('an unknown result fails closed', () => {
-  for (const result of ['passed', 'SKIPPED', 'PASSED ', 1]) {
+  for (const result of ['passed', 'SKIPPED', 'PASSED ', 1, 'PASSED\n', 'WARNED\n\n', ['PASSED']]) {
     const r = setup({ verifyOut: statement({ result }) })();
     assert.equal(r.code, 1, `${result}: ${r.out}`);
     assert.match(r.out, /FAIL: result unknown: /);
