@@ -31,15 +31,17 @@ If your test names, error messages, or console output can contain sensitive data
 - Environment variables are never read into it.
 - Every field is bounded (names, paths, and frames 300 characters, messages 1,500, the rerun command 500, at most 20 frames and 10 evidence entries per test), so the 12 KB cap always holds.
 
-Input limits: `ctrf.json` 32 MiB, each evidence file 512 MiB, each trace zip 256 MiB, 32 MiB inflated per trace entry and 128 MiB across all traces. Over a limit, the CLI stops with an error naming the file, or skips the trace entry with a warning. A results directory, `ctrf.json`, test config, or output directory that is a symlink or resolves outside the results directory is refused.
+Input limits: `ctrf.json` 32 MiB, each evidence file 512 MiB, each trace zip 256 MiB, 32 MiB inflated per trace entry and 128 MiB inflated across all traces, where an entry skipped for size still counts what it inflated; once that budget is spent, no further entry is inflated. Over a limit, the CLI stops with an error naming the file, or skips the trace entry with a warning. A results directory, `ctrf.json`, test config, or output directory that is a symlink or resolves outside the results directory is refused.
+
+Artifact paths and test config names go into the signed receipt exactly, so the evidence can be checked against them; one that redaction would change is refused rather than rewritten. Target metadata is allowlisted: the build sha, the URL without credentials, query, or fragment, and the probe's status; the health response body is never recorded.
 
 Redaction is pattern-based and cannot catch every secret. Do not log secrets in tests. The fixture in `packages/cli/test/packet.test.mjs` lists every shape that is masked; `packages/cli/test/hardening.test.mjs` covers the fields, bounds, limits, and symlinks.
 
 ## Verdicts
 
-- `attested verify` accepts only the attestation whose certificate names the attesting run and its ref, requires the head commit to match, and decides on the signed result: `PASSED` passes; `WARNED` (skipped, flaky, or other non-failed tests) passes with a warning annotation; `FAILED` fails; a missing or unknown result fails. The receipt is `FAILED` when either the CTRF summary or any individual test reports a failure.
+- `attested verify` accepts only the attestation whose certificate names the attesting run and its ref, requires the head commit to match, and decides on the signed result: `PASSED` passes; `WARNED` (skipped, pending, or other non-failed tests, passed tests that CTRF marks `flaky`, or a summary `flaky` count above zero) passes with a warning annotation; `FAILED` fails; a missing or unknown result fails. The receipt is `FAILED` when either the CTRF summary or any individual test reports a failure.
 - In the required workflow, verify also reads the `attested run` job from the Actions API. A test-step failure fails verify even if the receipt says `PASSED`; any other abnormal conclusion fails it.
-- The MCP server's `attested_status` builds its `verified` verdict from the signed statement under the same run, ref, and head policy. Fields read from the project's own `attested/receipt.json` are returned under `localReceipt` and labelled unverified. It refuses project files that are symlinks or resolve outside the project, and returns a packet only after checking its shape.
+- The MCP server's `attested_status` builds its `verified` verdict from the signed statement under the same run, ref, and head policy, and, like the required workflow, is not ok when the `attested run` job failed at its test step or did not finish normally. Fields read from the project's own `attested/receipt.json` are returned under `localReceipt` and labelled unverified. It refuses project files that are symlinks or resolve outside the project, and returns a packet only after checking its shape.
 
 ## Trust model and limits
 

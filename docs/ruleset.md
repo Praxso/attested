@@ -12,7 +12,7 @@
 | `gh attestation verify` accepts it, with `--signer-workflow` set to the attesting workflow | `verification failed for sha256:...` |
 | The accepted attestation's certificate names the exact run that produced the receipt (`runInvocationURI`) and the expected ref (`sourceRepositoryRef`: `refs/pull/<N>/merge`, or `refs/heads/main` on push). Every returned attestation is checked; none is taken by position. | `no attestation from run <id> on <ref>` |
 | Head rule: `source.commit` or `source.headCommit` equals the head being verified | `SHA mismatch:` |
-| `testResult.result` is `PASSED`, or `WARNED` (passes with a warning annotation: skipped, flaky, or other non-failed tests). `FAILED` fails. | `result FAILED:` |
+| `testResult.result` is `PASSED`, or `WARNED` (passes with a warning annotation: skipped, pending, or other non-failed tests, passed tests that CTRF marks `flaky`, or a summary `flaky` count above zero). `FAILED` fails. | `result FAILED:` |
 | A result is present and is one of `PASSED`, `WARNED`, `FAILED` | `result missing:` / `result unknown:` |
 | The `attested run` job's test step did not fail (when `required.sh` found the run) | `test command failed:` |
 | The run is not an unsigned fork run (unless `allow-unsigned: true`) | `unsigned run from fork` |
