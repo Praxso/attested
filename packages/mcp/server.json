@@ -5,13 +5,13 @@
   "description": "Run tests into a Sigstore-signed receipt; get a redacted failure packet on red. No images posted.",
   "repository": { "url": "https://github.com/Praxso/attested", "source": "github", "subfolder": "packages/mcp" },
   "websiteUrl": "https://github.com/Praxso/attested",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@praxso/attested-mcp",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "transport": { "type": "stdio" }
     }
   ]
