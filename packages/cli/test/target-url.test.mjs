@@ -67,6 +67,20 @@ test('matching build sha passes and is recorded', async () => {
   assert.equal(receipt.predicate.target.url, s.url);
 });
 
+test('target metadata is allowlisted: no health body, no URL query, nothing secret-shaped', async () => {
+  const { dir, head } = makeRepo();
+  const SECRET = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+  const s = await serve(JSON.stringify({ sha: head, env: { GITHUB_TOKEN: SECRET }, admin: 'a@b.example' }));
+  const r = await run(dir, ['--target-url', `${s.url}/?token=${SECRET}#x`]);
+  s.close();
+  assert.equal(r.code, 0, r.stderr);
+  const text = readFileSync(join(dir, 'attested/receipt.json'), 'utf8');
+  assert.equal(text.includes('ghp_'), false);
+  assert.equal(text.includes('a@b.example'), false);
+  const { target } = JSON.parse(text).predicate;
+  assert.deepEqual(target, { buildSha: head, url: `${s.url}/`, health: { probed: `${s.url}/healthz`, status: 200 } });
+});
+
 test('mismatched build sha fails before tests', async () => {
   const { dir } = makeRepo();
   const s = await serve(JSON.stringify({ sha: '0000000000000000000000000000000000000000' }));

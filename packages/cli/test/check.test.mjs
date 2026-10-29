@@ -1,12 +1,15 @@
-// Covers `attested check`: conclusion mapping, the PR-head target sha, no images, and the fork / read-only fallbacks.
+// Covers `attested check`: conclusion mapping, the PR-head target sha, no images, the fork / read-only fallbacks, and
+// the printed verify and evidence commands run against the real artifact layout.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildSummary, defaultCheckOptions } from '../dist/check.js';
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'attested.js');
 const HEAD = 'a'.repeat(40);
@@ -45,7 +48,7 @@ function api(status) {
 
 function run(dir, apiUrl) {
   return new Promise((ok) => {
-    const env = { ...process.env, GITHUB_TOKEN: 'test-token', GITHUB_REPOSITORY: 'o/r', GITHUB_API_URL: apiUrl, GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_SHA: MERGE, GITHUB_RUN_ID: '42', GITHUB_STEP_SUMMARY: '' };
+    const env = { ...process.env, GITHUB_TOKEN: 'test-token', GITHUB_REPOSITORY: 'o/r', GITHUB_API_URL: apiUrl, GITHUB_EVENT_PATH: join(dir, 'event.json'), GITHUB_SHA: MERGE, GITHUB_REF: 'refs/pull/7/merge', GITHUB_RUN_ID: '42', GITHUB_STEP_SUMMARY: '' };
     const child = spawn(process.execPath, [BIN, 'check', '--artifact-url', 'https://example.test/artifact', '--artifact-name', 'attested-x'], { cwd: dir, env });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
@@ -96,4 +99,91 @@ test('HTTP 403 (read-only token) falls back to the log without failing', async (
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /### attested: FAILED/);
   assert.match(r.out, /HTTP 403/);
+});
+
+// --- the printed instructions, run end to end against the real two-artifact layout ------------------
+// A fake `gh` stands in for the network: `run download` is a no-op over pre-made directories, and `attestation verify`
+// prints a canned verification result. jq and shasum are the real ones.
+
+const PREDICATE_TYPE = 'https://praxso.ai/attested/v0.1';
+const sha = (text) => createHash('sha256').update(text).digest('hex');
+
+function instructions(receipt) {
+  const env = { GITHUB_REPOSITORY: 'o/r', GITHUB_RUN_ID: '42', GITHUB_REF: 'refs/heads/main', GITHUB_SHA: HEAD, GITHUB_EVENT_PATH: '' };
+  const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try {
+    const { summary } = buildSummary(receipt, null, { ...defaultCheckOptions(), artifactName: 'attested-x' });
+    return [...summary.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join('');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+}
+
+// A red run as the bundled workflow leaves it: the receipt artifact (ctrf, receipt, packet) and the evidence artifact.
+function redRun({ run = '42' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'attested-layout-'));
+  const files = {
+    'attested-receipt/attested/ctrf.json': '{"results":{"tests":[]}}',
+    'attested-receipt/attested/packet.json': '{"result":"FAILED"}',
+    'attested-evidence/attested/ctrf.json': '{"results":{"tests":[]}}',
+    'attested-evidence/test-results/a b/trace.zip': 'trace',
+    'attested-evidence/test-results/a b/shot.png': 'png',
+    'attested-evidence/playwright.config.ts': 'export default {}',
+  };
+  for (const [p, text] of Object.entries(files)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), text); }
+  const artifacts = [
+    { path: 'attested/ctrf.json', sha256: sha(files['attested-evidence/attested/ctrf.json']), kind: 'report' },
+    { path: 'test-results/a b/shot.png', sha256: sha('png'), kind: 'screenshot' },
+    { path: 'test-results/a b/trace.zip', sha256: sha('trace'), kind: 'trace' },
+    { path: 'attested/packet.json', sha256: sha(files['attested-receipt/attested/packet.json']), kind: 'packet' },
+  ];
+  const predicate = {
+    testResult: { result: 'FAILED', passedTests: [], failedTests: ['f'], warnedTests: [] },
+    source: { commit: HEAD, headCommit: null, dirty: null, ref: 'refs/heads/main' },
+    target: { buildSha: null, url: null },
+    artifacts,
+    ctrf: { summary: { tests: 1 } },
+  };
+  const receipt = { subject: [{ name: 'ctrf.json', digest: { sha256: artifacts[0].sha256 } }], predicateType: PREDICATE_TYPE, predicate };
+  writeFileSync(join(dir, 'attested-receipt/attested/receipt.json'), JSON.stringify(receipt));
+  const verified = [{ verificationResult: {
+    signature: { certificate: { sourceRepositoryRef: 'refs/heads/main', runInvocationURI: `https://github.com/o/r/actions/runs/${run}/attempts/1` } },
+    statement: { predicateType: PREDICATE_TYPE, predicate },
+  } }];
+  writeFileSync(join(dir, 'verify.json'), JSON.stringify(verified));
+  mkdirSync(join(dir, 'bin'));
+  writeFileSync(join(dir, 'bin/gh'), `#!/bin/sh\ncase "$1" in run) exit 0;; attestation) cat "${join(dir, 'verify.json')}";; esac\n`);
+  chmodSync(join(dir, 'bin/gh'), 0o755);
+  return { dir, receipt };
+}
+
+function runInstructions(dir, script) {
+  return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}` } });
+}
+
+test('the printed evidence check passes on an intact red run: packet from the receipt download, the rest from the evidence download', () => {
+  const { dir, receipt } = redRun();
+  const r = runInstructions(dir, instructions(receipt));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  for (const p of ['attested/ctrf.json', 'test-results/a b/shot.png', 'test-results/a b/trace.zip', 'attested/packet.json']) assert.match(r.stdout, new RegExp(`${p}: OK`));
+});
+
+test('the printed evidence check takes fingerprints from the signed statement: a rewritten receipt.json manifest does not help', () => {
+  const { dir, receipt } = redRun();
+  // Swap an evidence file and make the downloaded, unsigned receipt.json agree with the swap.
+  writeFileSync(join(dir, 'attested-evidence/test-results/a b/shot.png'), 'other png');
+  const local = JSON.parse(readFileSync(join(dir, 'attested-receipt/attested/receipt.json'), 'utf8'));
+  local.predicate.artifacts.find((a) => a.kind === 'screenshot').sha256 = sha('other png');
+  writeFileSync(join(dir, 'attested-receipt/attested/receipt.json'), JSON.stringify(local));
+  const r = runInstructions(dir, instructions(receipt));
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout, /shot\.png: FAILED/);
+});
+
+test('the printed instructions accept only a statement signed in this run', () => {
+  const { dir, receipt } = redRun({ run: '41' });
+  const r = runInstructions(dir, instructions(receipt));
+  assert.notEqual(r.status, 0);
+  assert.equal(readFileSync(join(dir, 'attested-statement.json'), 'utf8').trim(), 'null');
 });

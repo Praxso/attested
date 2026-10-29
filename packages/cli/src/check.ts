@@ -17,6 +17,15 @@ export function defaultCheckOptions(): CheckOptions {
   return { receipt: DEFAULTS.receipt, packet: DEFAULTS.packet, artifactUrl: null, artifactName: null, evidenceName: null, attestationUrl: null };
 }
 
+// Selects the statement `attested verify` accepts from `gh attestation verify --format json`: the certificate names
+// this run and ref, and the predicate's commit or PR head is the head the check is attached to. Null (jq -e fails) when none.
+const STATEMENT_JQ = `[.[].verificationResult | select(.signature.certificate.sourceRepositoryRef == $ref and ((.signature.certificate.runInvocationURI // "") | test("/actions/runs/" + $run + "(/attempts/[0-9]+)?$"))) | .statement | select(.predicateType == "${PREDICATE_TYPE}" and (.predicate.source.commit == $head or .predicate.source.headCommit == $head))] | first`;
+const SUM_LINE = '"\\(.sha256)  \\(.path)"';
+
+function shellQuote(s: string): string {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 type Conclusion = 'success' | 'failure' | 'neutral';
 
 export function conclusionFor(result: string | undefined): Conclusion {
@@ -62,16 +71,31 @@ export function buildSummary(receipt: Receipt, packet: string | null, opts: Chec
   if (url) lines.push(`| Run | ${url} |`);
   lines.push('', 'Verify this receipt yourself:', '', '```bash');
   const runId = process.env.GITHUB_RUN_ID;
+  const ref = process.env.GITHUB_REF;
+  const headSha = checkHeadSha();
   if (runId && opts.artifactName) lines.push(`gh run download ${runId} --repo ${repo} --name ${opts.artifactName} --dir attested-receipt`);
-  lines.push(`gh attestation verify attested-receipt/attested/ctrf.json --repo ${repo} --predicate-type ${PREDICATE_TYPE} --signer-workflow ${signer}`);
+  const verify = `gh attestation verify attested-receipt/attested/ctrf.json --repo ${repo} --predicate-type ${PREDICATE_TYPE} --signer-workflow ${signer}`;
+  // The accepted statement is the one `attested verify` would accept: signed in this run, on this ref, for this head.
+  // Every later check reads the statement, never the downloaded receipt.json, which is unsigned.
+  const pinned = Boolean(runId && ref && headSha);
+  if (pinned) {
+    lines.push(`${verify} --format json > attested-verify.json`);
+    lines.push(`jq -e --arg run ${runId} --arg ref ${shellQuote(ref!)} --arg head ${headSha} '${STATEMENT_JQ}' attested-verify.json > attested-statement.json`);
+  } else {
+    lines.push(verify);
+  }
   lines.push('```');
   // The evidence travels in its own artifact. Its name defaults to the bundled workflow's (results-<sha> beside
   // attested-<sha>), as the signer workflow above defaults to the bundled attested.yml.
   const evidence = opts.evidenceName ?? (opts.artifactName?.startsWith('attested-') ? `results-${opts.artifactName.slice('attested-'.length)}` : null);
-  if (runId && evidence) {
-    lines.push('', 'Get the evidence (screenshots, videos, traces) and check that each file is the one this receipt fingerprints:', '', '```bash');
+  if (pinned && evidence) {
+    lines.push('', 'Get the evidence (screenshots, videos, traces) and check each file against the fingerprints in the signed statement:', '', '```bash');
     lines.push(`gh run download ${runId} --repo ${repo} --name ${evidence} --dir attested-evidence`);
-    lines.push(`cd attested-evidence && jq -r '.predicate.artifacts[] | "\\(.sha256)  \\(.path)"' ../attested-receipt/attested/receipt.json | shasum -a 256 -c`);
+    // The sign job writes the failure packet into the receipt artifact, so packet entries are checked there.
+    lines.push(`(cd attested-evidence && jq -r '.predicate.artifacts[] | select(.kind != "packet") | ${SUM_LINE}' ../attested-statement.json | shasum -a 256 -c)`);
+    if (p.artifacts?.some((a) => a.kind === 'packet')) {
+      lines.push(`(cd attested-receipt && jq -r '.predicate.artifacts[] | select(.kind == "packet") | ${SUM_LINE}' ../attested-statement.json | shasum -a 256 -c)`);
+    }
     lines.push('```');
     lines.push('', "Artifacts follow this repository's artifact retention (90 days by default); the receipt's digests and signature outlast them.");
   }

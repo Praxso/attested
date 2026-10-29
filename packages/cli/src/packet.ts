@@ -69,6 +69,8 @@ export function readZip(path: string, want: (name: string) => boolean, budget = 
     if (!want(name)) continue;
     const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
     const data = buf.subarray(start, start + csize);
+    // Once the shared budget is spent, the remaining entries are not inflated at all.
+    if (budget.left <= 0) { warn(`trace ${path}: the ${MAX_TRACE_TOTAL_BYTES}-byte budget across all traces is spent; remaining entries skipped`); break; }
     const limit = Math.min(MAX_TRACE_ENTRY_BYTES, budget.left);
     try {
       let text: Buffer;
@@ -80,6 +82,8 @@ export function readZip(path: string, want: (name: string) => boolean, budget = 
       out.set(name, text.toString('utf8'));
     } catch (err) {
       // Over the limit (zlib reports ERR_BUFFER_TOO_LARGE) or unreadable: skip the entry.
+      // A rejected entry may have been inflated up to limit + 1 bytes before it was refused: charge that work too.
+      budget.left = Math.max(0, budget.left - (limit + 1));
       if (err instanceof RangeError || (err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
         warn(`trace ${path}: entry ${clean(name, MAX_PATH)} inflates past ${limit} bytes (per entry ${MAX_TRACE_ENTRY_BYTES}, all traces ${MAX_TRACE_TOTAL_BYTES}); skipped`);
       }
@@ -104,6 +108,7 @@ export function readTraces(paths: string[]): { console: ConsoleEntry[]; network:
   let seq = 0;
   const budget = { left: MAX_TRACE_TOTAL_BYTES };
   for (const path of paths) {
+    if (budget.left <= 0) break;
     let files: Map<string, string>;
     // Trace zips can come from an untrusted results artifact: a malformed one is skipped, never fatal.
     try { files = readZip(path, (n) => n.endsWith('.trace') || n.endsWith('.network'), budget); } catch { continue; }

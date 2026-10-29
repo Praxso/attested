@@ -3,15 +3,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
-import { testResultFromCtrf } from '../dist/receipt.js';
+import { testResultFromCtrf, validateCtrf } from '../dist/receipt.js';
+import { publicUrl } from '../dist/run.js';
 import { ctrfMeta, MAX_CTRF_BYTES } from '../dist/assemble.js';
 import { buildPacket, readZip, rerunCommand, serializePacket, PACKET_MAX_BYTES, MAX_TRACE_ENTRY_BYTES } from '../dist/packet.js';
-import { sha256File } from '../dist/util.js';
+import { readInside, sha256File } from '../dist/util.js';
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'attested.js');
 const SECRET = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
@@ -197,4 +198,86 @@ test('a symlinked output directory is refused', () => {
   mkdirSync(join(dir, 'elsewhere'));
   symlinkSync(join(dir, 'elsewhere'), join(dir, 'results', 'test-results'));
   assert.match(attest(dir).out, /output directory .*test-results is a symlink; refusing to read it/);
+});
+
+// --- second review pass ------------------------------------------------------------------------------
+
+test('artifact paths and config names that look like secrets are refused, never published', () => {
+  const dir = results();
+  mkdirSync(join(dir, 'results', 'test-results'));
+  writeFileSync(join(dir, 'results', 'test-results', `token=${SECRET}.png`), 'png');
+  const r = attest(dir);
+  assert.equal(r.code, 2);
+  assert.match(r.out, /refusing to publish the path test-results\/token=\[REDACTED\]/);
+  assert.equal(r.out.includes(SECRET), false);
+  const dir2 = results();
+  writeFileSync(join(dir2, 'results', `key=${SECRET}.ts`), 'export default {}');
+  const r2 = attest(dir2, ['--config', `key=${SECRET}.ts`]);
+  assert.equal(r2.code, 2);
+  assert.equal(r2.out.includes(SECRET), false);
+});
+
+test('the complete emitted predicate carries no recognized secret from paths, config names, or the workflow ref', () => {
+  const dir = results();
+  mkdirSync(join(dir, 'results', 'test-results'));
+  writeFileSync(join(dir, 'results', 'test-results', 'shot.png'), 'png');
+  writeFileSync(join(dir, 'results', 'playwright.config.ts'), 'export default {}');
+  const r = spawnSync(process.execPath, [BIN, 'attest', '--from-results', 'results', '--out', 'signed/attested'], { cwd: dir, encoding: 'utf8',
+    env: { PATH: process.env.PATH, GITHUB_SHA: 'b'.repeat(40), GITHUB_OUTPUT: join(dir, 'out'), GITHUB_WORKFLOW_REF: `o/r/.github/workflows/a.yml@refs/heads/token=${SECRET}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  for (const f of ['receipt.json', 'predicate.json', 'test-result.json']) assert.equal(readFileSync(join(dir, 'signed/attested', f), 'utf8').includes('ghp_'), false, f);
+  const p = JSON.parse(readFileSync(join(dir, 'signed/attested/predicate.json'), 'utf8'));
+  assert.deepEqual(p.artifacts.map((a) => a.path), ['attested/ctrf.json', 'test-results/shot.png']);
+  assert.equal(p.testResult.configuration[0].name, 'playwright.config.ts');
+});
+
+test('target URLs lose credentials, query, and fragment', () => {
+  assert.equal(publicUrl(`https://user:${SECRET}@app.test/x?token=${SECRET}#f`), 'https://app.test/x');
+  assert.equal(publicUrl('http://127.0.0.1:3000'), 'http://127.0.0.1:3000');
+});
+
+test('malformed CTRF containers and entries are rejected; a valid zero-test report is accepted', () => {
+  assert.equal(validateCtrf({ results: { tests: [], summary: { tests: 0 } } }), null);
+  assert.match(validateCtrf({ results: [] }), /missing "results"/);
+  assert.match(validateCtrf({ results: { summary: { tests: 1, passed: 1 } } }), /"results.tests" is not an array/);
+  assert.match(validateCtrf({ results: { tests: { a: 1 } } }), /"results.tests" is not an array/);
+  assert.match(validateCtrf({ results: { tests: [{ name: 'a', status: 'passed' }, null] } }), /results.tests\[1\]/);
+  assert.match(validateCtrf({ results: { tests: [{ name: 'a' }] } }), /results.tests\[0\]/);
+  assert.match(validateCtrf({ results: { tests: [], summary: [] } }), /"results.summary" is not an object/);
+  for (const bad of [{ results: [] }, { results: { summary: { failed: 0 } } }, { results: { tests: 'x' } }]) {
+    const r = attest(results(JSON.stringify(bad)));
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    assert.match(r.out, /is not a CTRF report/);
+  }
+  assert.equal(attest(results(JSON.stringify({ results: { tests: [], summary: { tests: 0, failed: 0 } } }))).code, 0);
+});
+
+test('a file replaced or grown between validation and reading is refused', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'attested-hard-'));
+  const f = join(dir, 'ctrf.json');
+  writeFileSync(f, '{}');
+  assert.equal(readInside(dir, f, 100, 'CTRF report').toString(), '{}');
+  assert.throws(() => readInside(dir, f, 100, 'CTRF report', () => { writeFileSync(join(dir, 'other'), '{"x":1}'); renameSync(join(dir, 'other'), f); }), /was replaced while being read/);
+  assert.throws(() => readInside(dir, f, 100, 'CTRF report', () => appendFileSync(f, 'x'.repeat(200))), /over the 100-byte limit/);
+  symlinkSync(join(dir, 'ctrf.json'), join(dir, 'link.json'));
+  assert.throws(() => readInside(dir, join(dir, 'link.json'), 100, 'CTRF report'), /CTRF report .*link\.json is a symlink/);
+  assert.throws(() => sha256File(join(dir, 'link.json')), /link\.json is a symlink/);
+});
+
+test('rejected trace entries are charged to the shared budget, which stops inflation once spent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'attested-hard-'));
+  const path = join(dir, 'trace.zip');
+  writeFileSync(path, zip({ 'a.trace': 'a'.repeat(2000), 'b.trace': 'b'.repeat(2000), 'c.trace': '{"type":"x"}' }));
+  const budget = { left: 1500 };
+  assert.equal(readZip(path, () => true, budget).size, 0);
+  assert.equal(budget.left, 0);
+});
+
+test('flaky tests, per test or in the summary, make the result WARNED', () => {
+  const tr = testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }, { name: 'b', status: 'passed', flaky: true }]), [], null);
+  assert.equal(tr.result, 'WARNED');
+  assert.deepEqual(tr.passedTests, ['a']);
+  assert.deepEqual(tr.warnedTests, ['b [flaky]']);
+  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }], { tests: 1, passed: 1, failed: 0, flaky: 1 }), [], null).result, 'WARNED');
+  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed', flaky: false }], { tests: 1, passed: 1, failed: 0, flaky: 0 }), [], null).result, 'PASSED');
 });
