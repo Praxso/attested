@@ -1,6 +1,6 @@
 {
   "name": "@praxso/attested",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Signed, verifiable test receipts for agent-authored pull requests: wraps Playwright or any CTRF test run into an in-toto receipt signed with Sigstore via GitHub artifact attestations.",
   "keywords": [
     "attestation",

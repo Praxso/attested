@@ -146,7 +146,7 @@ https://github.com/user-attachments/assets/372ac548-e303-449f-98c0-5166b7a361f3
 
 `@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from the signed attestation accepted under the same run, ref, and head policy as `attested verify`; `localReceipt`: the project's own receipt fields, labelled unverified). The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, and instead of taking or posting screenshots to show a change works; to read the packet on red, fix, rerun, and put the receipt digest in the PR body.
 
-Both packages are on npm: [`@praxso/attested`](https://www.npmjs.com/package/@praxso/attested) 0.1.0 and [`@praxso/attested-mcp`](https://www.npmjs.com/package/@praxso/attested-mcp) 0.1.1. To run a local build instead, replace `npx -y @praxso/attested-mcp@0.1.1` below with `node /path/to/attested/packages/mcp/bin/attested-mcp.js` after `pnpm build`.
+Both packages are on npm: [`@praxso/attested`](https://www.npmjs.com/package/@praxso/attested) 0.1.1 and [`@praxso/attested-mcp`](https://www.npmjs.com/package/@praxso/attested-mcp) 0.1.2, published from [release.yml](.github/workflows/release.yml) with npm provenance. To run a local build instead, replace `npx -y @praxso/attested-mcp@0.1.2` below with `node /path/to/attested/packages/mcp/bin/attested-mcp.js` after `pnpm build`.
 
 **Claude Code**: install the plugin (MCP server plus skill) from this repo's marketplace.
 
@@ -160,7 +160,7 @@ Both packages are on npm: [`@praxso/attested`](https://www.npmjs.com/package/@pr
 ```toml
 [mcp_servers.attested]
 command = "npx"
-args = ["-y", "@praxso/attested-mcp@0.1.1"]
+args = ["-y", "@praxso/attested-mcp@0.1.2"]
 ```
 
 ```bash
@@ -170,13 +170,13 @@ mkdir -p ~/.codex/skills && cp -R codex/skills/attested ~/.codex/skills/
 **Cursor**: `.cursor/mcp.json` in the project.
 
 ```json
-{ "mcpServers": { "attested": { "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.1"] } } }
+{ "mcpServers": { "attested": { "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.2"] } } }
 ```
 
 **GitHub Copilot** in VS Code: `.vscode/mcp.json` in the project. Paste the steps of the skill file into `.github/copilot-instructions.md`.
 
 ```json
-{ "servers": { "attested": { "type": "stdio", "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.1"] } } }
+{ "servers": { "attested": { "type": "stdio", "command": "npx", "args": ["-y", "@praxso/attested-mcp@0.1.2"] } } }
 ```
 
 **Any agent, through repository instructions.** Codex, Cursor, Copilot, and Claude Code read a repository's `AGENTS.md` or `CLAUDE.md`. Paste this in so the rule applies to every agent in the repository, with or without the plugin:

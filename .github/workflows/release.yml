@@ -1,0 +1,65 @@
+name: release
+
+# Publishes @praxso/attested and then @praxso/attested-mcp to npm through npm trusted publishing (GitHub OIDC), so
+# every release carries npm provenance and no npm token exists anywhere. Run it by hand from main after bumping the
+# versions. The npm trusted publisher for each package names this file and the "npm" environment, and the environment
+# only allows deployments from main, so a copy of this workflow on another branch cannot publish.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish to npm
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache: a release builds from a clean install.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - name: Install npm 11
+        run: npm install -g npm@11.21.1
+
+      - name: Install, build, test
+        run: pnpm install --frozen-lockfile && pnpm build && pnpm test
+
+      # pnpm pack turns the MCP package's workspace:* dependency into the exact CLI version being released.
+      - name: Pack
+        id: pack
+        run: |
+          mkdir -p dist-release
+          (cd packages/cli && pnpm pack --pack-destination ../../dist-release)
+          (cd packages/mcp && pnpm pack --pack-destination ../../dist-release)
+          ls -l dist-release
+
+      - name: Publish @praxso/attested
+        run: |
+          V="$(node -p "require('./packages/cli/package.json').version")"
+          if npm view "@praxso/attested@$V" version >/dev/null 2>&1; then echo "@praxso/attested@$V already published; skipping"; else npm publish "dist-release/praxso-attested-$V.tgz" --access public; fi
+
+      - name: Publish @praxso/attested-mcp
+        run: |
+          V="$(node -p "require('./packages/mcp/package.json').version")"
+          if npm view "@praxso/attested-mcp@$V" version >/dev/null 2>&1; then echo "@praxso/attested-mcp@$V already published; skipping"; else npm publish "dist-release/praxso-attested-mcp-$V.tgz" --access public; fi

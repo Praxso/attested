@@ -1,6 +1,6 @@
 {
   "name": "@praxso/attested-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for attested: lets Claude Code, Codex, Cursor, and Copilot run tests into a signed receipt and read a redacted failure packet before opening a PR.",
   "keywords": [
     "mcp",
