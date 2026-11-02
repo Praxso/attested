@@ -52,7 +52,7 @@ Status: 0.1, early. How it was built and attacked, with the exit tests and explo
 
 On 2026-09-30 Help Net Security reported [PixelLeak](https://www.helpnetsecurity.com/2026/09/30/ai-coding-agents-github-screenshot-leak/): Glow Labs found more than 13,000 internal screenshots that AI coding agents had pushed to public GitHub repositories while trying to show reviewers a UI fix. Pull request image upload only works in the browser, so command-line agents put the images somewhere they could link to.
 
-A screenshot is also weak evidence: it shows one moment, says nothing about which commit produced it, and can be produced by anything. `attested` gives reviewers a signed statement of which tests ran against which commit and what happened. The traces, videos, and screenshots stay in the workflow artifact of the run that produced them, and only their sha256 digests travel in the receipt. `attested check` never uses the check-run `images` field and posts text only. See [SECURITY.md](SECURITY.md).
+A screenshot is also weak evidence: it shows one moment, says nothing about which commit produced it, and can be produced by anything. `attested` gives reviewers a signed statement of which tests ran against which commit and what happened. The traces, videos, and screenshots stay in the workflow artifact of the run that produced them, and only their sha256 digests travel in the receipt. `attested check` never uses the check-run `images` field and posts text only. See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
 ## From a fresh clone to a passing `attested verify` on a PR
 
