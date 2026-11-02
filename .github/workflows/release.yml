@@ -1,7 +1,9 @@
 name: release
 
-# Publishes @praxso/attested and then @praxso/attested-mcp to npm through npm trusted publishing (GitHub OIDC), so
-# every release carries npm provenance and no npm token exists anywhere. Run it by hand from main after bumping the
+# Stages @praxso/attested and then @praxso/attested-mcp on npm through npm trusted publishing (GitHub OIDC), so
+# every release carries npm provenance and no npm token exists anywhere. The trust relationship allows only
+# `npm stage publish`: nothing is public until a maintainer approves each staged version with 2FA
+# (`npm stage list`, then `npm stage approve <stage-id>`, CLI first, or on npmjs.com). Run it by hand from main after bumping the
 # versions. The npm trusted publisher for each package names this file and the "npm" environment, and the environment
 # only allows deployments from main, so a copy of this workflow on another branch cannot publish.
 
@@ -55,12 +57,12 @@ jobs:
           (cd packages/mcp && pnpm pack --pack-destination ../../dist-release)
           ls -l dist-release
 
-      - name: Publish @praxso/attested
+      - name: Stage @praxso/attested
         run: |
           V="$(node -p "require('./packages/cli/package.json').version")"
-          if npm view "@praxso/attested@$V" version >/dev/null 2>&1; then echo "@praxso/attested@$V already published; skipping"; else npm publish "./dist-release/praxso-attested-$V.tgz" --access public; fi
+          if npm view "@praxso/attested@$V" version >/dev/null 2>&1; then echo "@praxso/attested@$V already published; skipping"; else npm stage publish "./dist-release/praxso-attested-$V.tgz" --access public; fi
 
-      - name: Publish @praxso/attested-mcp
+      - name: Stage @praxso/attested-mcp
         run: |
           V="$(node -p "require('./packages/mcp/package.json').version")"
-          if npm view "@praxso/attested-mcp@$V" version >/dev/null 2>&1; then echo "@praxso/attested-mcp@$V already published; skipping"; else npm publish "./dist-release/praxso-attested-mcp-$V.tgz" --access public; fi
+          if npm view "@praxso/attested-mcp@$V" version >/dev/null 2>&1; then echo "@praxso/attested-mcp@$V already published; skipping"; else npm stage publish "./dist-release/praxso-attested-mcp-$V.tgz" --access public; fi
