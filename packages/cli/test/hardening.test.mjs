@@ -304,28 +304,31 @@ test('flaky tests, per test or in the summary, make the result WARNED', () => {
 
 test('redaction covers URL credentials, private keys, cookies, webhooks and common token formats', async () => {
   const { redact, clean } = await import('../dist/redact.js');
+  // Every fixture is fake and assembled at runtime from pieces, so no secret-shaped literal sits in the
+  // repository for secret scanners (or readers) to mistake for a real credential.
+  const j = (...parts) => parts.join('');
   const leaks = {
-    'postgres://admin:S3cr3t!@db.internal:5432/app': 'S3cr3t!',
-    'redis://:hunter2pw@cache:6379': 'hunter2pw',
-    'ws://user:wspass99@host/socket': 'wspass99',
-    '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----': 'b3BlbnNzaC1rZXktdjEAAAAA',
-    '-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAtruncated': 'MIIEpAIBAAKCAQEA',
-    'Cookie: connect.sid=s%3Aabc.def; theme=dark': 'connect.sid',
-    'set-cookie: sid=zzzz9999; HttpOnly': 'zzzz9999',
-    'key ASIAABCDEFGHIJKLMNOP used': 'ASIAABCDEFGHIJKLMNOP',
-    'stripe sk_live_51Habcdefghijklmnop': 'sk_live_51Habcdefghijklmnop',
-    'maps AIzaSyA-1234567890abcdefghijklmnopqrstu': 'AIzaSyA-1234567890abcdefghijklmnopqrstu',
-    'npm npm_abcdefghijklmnopqrstuvwxyz0123456789': 'npm_abcdefghijklmnopqrstuvwxyz0123456789',
-    'gitlab glpat-abcdefghijklmnopqrst': 'glpat-abcdefghijklmnopqrst',
-    'https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXX': 'XXXXXXXXXXXX',
-    'https://discord.com/api/webhooks/123/abcDEF_secret': 'abcDEF_secret',
-    'login pwd=letmein123': 'letmein123',
+    [j('postgres', '://admin:', 'S3cr3t!', '@db.internal:5432/app')]: 'S3cr3t!',
+    [j('redis', '://:', 'hunter2pw', '@cache:6379')]: 'hunter2pw',
+    [j('ws', '://user:', 'wspass99', '@host/socket')]: 'wspass99',
+    [j('-----BEGIN ', 'OPENSSH PRIVATE', ' KEY-----\n', 'fakefakefakekeybody', '\n-----END ', 'OPENSSH PRIVATE', ' KEY-----')]: 'fakefakefakekeybody',
+    [j('-----BEGIN ', 'RSA PRIVATE', ' KEY-----\n', 'cutofffakekeybody')]: 'cutofffakekeybody',
+    [j('Cookie: ', 'connect.sid', '=s%3Aabc.def; theme=dark')]: 'connect.sid',
+    [j('set-cookie: sid=', 'zzzz9999', '; HttpOnly')]: 'zzzz9999',
+    [j('key ', 'ASIA', 'ABCDEFGHIJKLMNOP', ' used')]: j('ASIA', 'ABCDEFGHIJKLMNOP'),
+    [j('stripe ', 'sk_', 'live_', 'FAKEfakeFAKEfake')]: j('sk_', 'live_', 'FAKEfakeFAKEfake'),
+    [j('maps ', 'AI', 'za', 'FAKE', 'x'.repeat(31))]: j('AI', 'za', 'FAKE', 'x'.repeat(31)),
+    [j('npm ', 'npm_', 'f'.repeat(36))]: j('npm_', 'f'.repeat(36)),
+    [j('gitlab ', 'glpat-', 'fakefakefakefakefake')]: j('glpat-', 'fakefakefakefakefake'),
+    [j('https://hooks.', 'slack.com/services/', 'T000/B000/', 'FAKEFAKEFAKE')]: 'FAKEFAKEFAKE',
+    [j('https://discord.com/api/', 'webhooks/123/', 'fake_webhook_secret')]: 'fake_webhook_secret',
+    [j('login pwd=', 'letmein123')]: 'letmein123',
   };
   for (const [input, secret] of Object.entries(leaks)) {
     const out = clean(input, 500);
     assert.equal(out.includes(secret), false, `${JSON.stringify(input)} -> ${JSON.stringify(out)}`);
   }
-  assert.equal(redact('token: ghp_abcdefghijklmnopqrstuvwxyz0123456789'), 'token: [REDACTED]');
+  assert.equal(redact(j('token: ', 'ghp_', 'f'.repeat(36))), 'token: [REDACTED]');
   assert.equal(clean('passed: 3 of 3', 100), 'passed: 3 of 3');
 });
 
