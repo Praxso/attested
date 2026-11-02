@@ -13,7 +13,7 @@ Make attested usable by an agent end to end: run, read a failure packet, fix, re
 
 ## Non-goals
 
-No hosted service, no ledger, no UI beyond the GitHub check, no org-wide policy, no billing, no non-GitHub forges, no video narration, no Induct code copied in. The failure packet is written fresh from the contract below; it is small.
+No hosted service, no ledger, no UI beyond the GitHub check, no org-wide policy, no billing, no non-GitHub forges, no video narration, no code copied in from other projects. The failure packet is written fresh from the contract below; it is small.
 
 ## Deliverables
 
@@ -83,7 +83,7 @@ Prepare all; submit only where marked.
 
 - Public repo. Pin every action to a full commit SHA. No secrets, no long-lived keys. Never push images or videos to any repository, never post them to any external host.
 - Do not submit anything to a third party without Zach's approval except the Actions Marketplace metadata in our own repo.
-- No Induct code. Keep token use low: read each file once, make focused edits, do not explore beyond this brief.
+- No code from other projects. Keep token use low: read each file once, make focused edits, do not explore beyond this brief.
 
 ## Stop conditions
 

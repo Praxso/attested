@@ -70,15 +70,20 @@ export function testResultFromCtrf(ctrf: Ctrf, configuration: TestResultPredicat
   // A passed test that CTRF marks flaky (passed on a retry) is warned, not passed.
   const flaky = (t: { status: string; flaky?: boolean }) => t.status === 'passed' && t.flaky === true;
   const passedTests = tests.filter((t) => t.status === 'passed' && !flaky(t)).map(nameOf);
-  const failedTests = tests.filter((t) => t.status === 'failed').map(nameOf);
+  // CTRF's statuses are passed, failed, skipped, pending and other. Anything else (a reporter's own "timedOut" or
+  // "interrupted", or garbage) is counted as a failure rather than waved through as a warning.
+  const known = new Set(['passed', 'failed', 'skipped', 'pending', 'other']);
+  const failedTests = tests.filter((t) => t.status === 'failed' || !known.has(t.status)).map(nameOf);
   // CTRF has no "warned" status; flaky/other/skipped/pending land here so nothing is silently dropped.
-  const warnedTests = tests.filter((t) => t.status !== 'failed' && (t.status !== 'passed' || flaky(t)))
+  const warnedTests = tests.filter((t) => known.has(t.status) && t.status !== 'failed' && (t.status !== 'passed' || flaky(t)))
     .map((t) => `${nameOf(t)} [${flaky(t) ? 'flaky' : clean(t.status, 20)}]`);
   const summary = ctrf.results.summary ?? {};
   const summaryFlaky = typeof summary.flaky === 'number' && summary.flaky > 0;
   // FAILED if either the summary or any individual test reports a failure. A summary failed count that is present but
   // not the number 0 counts as a failure, so a malformed summary cannot hide one.
-  const failed = failedTests.length > 0 || (summary.failed !== undefined && summary.failed !== 0);
+  // A run in which no test passed (an empty report, a crashed reporter, everything skipped) is not evidence that
+  // anything works, so it is FAILED, not PASSED or WARNED.
+  const failed = failedTests.length > 0 || (summary.failed !== undefined && summary.failed !== 0) || tests.every((t) => t.status !== 'passed');
   const result: TestResultPredicate['result'] = failed ? 'FAILED' : warnedTests.length > 0 || summaryFlaky ? 'WARNED' : 'PASSED';
   const tr: TestResultPredicate = { result, configuration, passedTests, warnedTests, failedTests };
   if (url) tr.url = url;

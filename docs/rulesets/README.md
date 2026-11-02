@@ -10,7 +10,7 @@ A repository ruleset that requires the status check context `attested verify` (s
 - Targets only the attested repository (`repository_id` condition) and its default branch.
 - Bypass: organization admins only, in `pull_request` mode, which means a bypass is an explicit choice on a specific pull request.
 
-Active as org ruleset 25127513, pinned to `2c60bab19fc69af58678058d67da036859334b89`, the verifier hardening in [#31](https://github.com/Praxso/attested/pull/31). Earlier pins: `226831a765176521b81f597fa4146363dd435be7` ([#26](https://github.com/Praxso/attested/pull/26)) and `351af3292fde457e4a12d51a30004b0e3c983b35` ([#17](https://github.com/Praxso/attested/pull/17)). Check the live pin with `gh api orgs/Praxso/rulesets/25127513 --jq '.rules[].parameters.workflows[]?.sha'`. Apply it as an organization admin (`admin:org` scope):
+Active as org ruleset 25127513, pinned to `7bf6181952d08d6c185a928585a24563f4d1c135` ([#44](https://github.com/Praxso/attested/pull/44)). Earlier pins: `2c60bab19fc69af58678058d67da036859334b89` ([#31](https://github.com/Praxso/attested/pull/31)), `226831a765176521b81f597fa4146363dd435be7` ([#26](https://github.com/Praxso/attested/pull/26)) and `351af3292fde457e4a12d51a30004b0e3c983b35` ([#17](https://github.com/Praxso/attested/pull/17)). Check the live pin with `gh api orgs/Praxso/rulesets/25127513 --jq '.rules[].parameters.workflows[]?.sha'`. Apply it as an organization admin (`admin:org` scope):
 
 ```bash
 gh api -X POST orgs/Praxso/rulesets --input docs/rulesets/org-attested-verify.json

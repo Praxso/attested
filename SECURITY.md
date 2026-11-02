@@ -16,7 +16,7 @@ If your test names, error messages, or console output can contain sensitive data
 ## What is never uploaded
 
 - `attested` never posts images, video, or traces to a pull request, issue, comment, or check run. `attested check` posts text only and never sets the check-run `images` field.
-- `attested` never uploads anything to a host other than GitHub. Signing uses GitHub's `actions/attest`, which records the attestation with Sigstore.
+- `attested` never uploads anything to a host other than GitHub and Sigstore. Signing uses GitHub's `actions/attest`, which records the attestation with Sigstore; for a public repository that includes the public Rekor transparency log, whose entries are permanent and cannot be deleted.
 - The MCP server runs the attested CLI bundled with it, or `ATTESTED_BIN` from its own configuration, never a binary from the project's `node_modules`.
 - The MCP server and the agent skill tell agents not to attach, upload, or paste evidence files anywhere, and to link to the check instead. This is the failure mode reported as PixelLeak on 2026-09-30.
 - Nothing is committed to the repository. `attested/` and `test-results/` belong in `.gitignore`.
@@ -27,7 +27,9 @@ If your test names, error messages, or console output can contain sensitive data
 
 - ANSI escape codes are stripped.
 - URLs lose their query strings and fragments. Request URLs keep only the path.
-- Bearer and basic credentials, `*key*=`, `*token*=`, `*secret*=`, `*password*=`, `*session*=`, `*auth*=`, `*credential*=` values, GitHub, Slack, OpenAI-style, and AWS access key shapes, JWTs, and email addresses are masked.
+- Credentials in URLs (`scheme://user:password@`), PEM and OpenSSH private keys, `Cookie`/`Set-Cookie` values, Slack and Discord webhook URLs, bearer and basic credentials, `*key*=`, `*token*=`, `*secret*=`, `*password*=`, `*pwd*=`, `*session*=`, `*auth*=`, `*credential*=` values, GitHub, Slack, OpenAI-style, Stripe, Google API, npm, GitLab and AWS (`AKIA`/`ASIA`) key shapes, JWTs, and email addresses are masked.
+- Control characters, newlines included, are replaced with spaces in every name, path and log line, so test output cannot inject GitHub Actions workflow commands. Failure messages keep their newlines inside the JSON packet only.
+- Redaction is pattern-based: a secret in a format not listed here can still appear. Keep secrets out of test names and output.
 - Environment variables are never read into it.
 - Every field is bounded (names, paths, and frames 300 characters, messages 1,500, the rerun command 500, at most 20 frames and 10 evidence entries per test), so the 12 KB cap always holds.
 

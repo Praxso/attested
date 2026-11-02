@@ -1,6 +1,7 @@
 // Single place to rename the project or move the predicate URI.
 export const TOOL_NAME = 'attested';
-export const TOOL_VERSION = '0.1.0';
+// Must equal packages/cli/package.json version; test/version.test.mjs enforces it.
+export const TOOL_VERSION = '0.1.1';
 export const PREDICATE_TYPE = 'https://praxso.ai/attested/v0.1';
 export const TEST_RESULT_PREDICATE_TYPE = 'https://in-toto.io/attestation/test-result/v0.1';
 export const STATEMENT_TYPE = 'https://in-toto.io/Statement/v1';

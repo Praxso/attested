@@ -48,7 +48,25 @@ test('result is FAILED when the summary reports a failure, even if no individual
 test('result is PASSED or WARNED only with no failure anywhere', () => {
   assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }], { failed: 0 }), [], null).result, 'PASSED');
   assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }]), [], null).result, 'PASSED');
-  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'skipped' }], { failed: 0 }), [], null).result, 'WARNED');
+  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }, { name: 'b', status: 'skipped' }], { failed: 0 }), [], null).result, 'WARNED');
+});
+
+test('a run in which no test passed is FAILED: empty report, all skipped, unknown statuses', () => {
+  assert.equal(testResultFromCtrf(ctrf([]), [], null).result, 'FAILED');
+  assert.equal(testResultFromCtrf(ctrf([], { tests: 0, passed: 0, failed: 0 }), [], null).result, 'FAILED');
+  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'skipped' }], { failed: 0 }), [], null).result, 'FAILED');
+  assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'pending' }, { name: 'b', status: 'other' }]), [], null).result, 'FAILED');
+  for (const status of ['timedOut', 'interrupted', 'PASSED', '']) {
+    const tr = testResultFromCtrf(ctrf([{ name: 'ok', status: 'passed' }, { name: 'odd', status }]), [], null);
+    assert.equal(tr.result, 'FAILED', status);
+    assert.ok(tr.failedTests.some((n) => n.includes('odd')), status);
+  }
+});
+
+test('test names cannot start a new log line (no workflow-command injection)', () => {
+  const evil = 'x\n::warning title=injected::pwned\r\n::add-mask::abc\u0000';
+  const tr = testResultFromCtrf(ctrf([{ name: 'ok', status: 'passed' }, { name: evil, status: 'failed' }]), [], null);
+  for (const name of [...tr.passedTests, ...tr.failedTests]) assert.equal(/[\u0000-\u001f\u007f]/.test(name), false, JSON.stringify(name));
 });
 
 test('receipt test names are redacted and bounded', () => {
@@ -280,4 +298,61 @@ test('flaky tests, per test or in the summary, make the result WARNED', () => {
   assert.deepEqual(tr.warnedTests, ['b [flaky]']);
   assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed' }], { tests: 1, passed: 1, failed: 0, flaky: 1 }), [], null).result, 'WARNED');
   assert.equal(testResultFromCtrf(ctrf([{ name: 'a', status: 'passed', flaky: false }], { tests: 1, passed: 1, failed: 0, flaky: 0 }), [], null).result, 'PASSED');
+});
+
+// --- redaction coverage and output writes (pre-launch review) ----------------------------------
+
+test('redaction covers URL credentials, private keys, cookies, webhooks and common token formats', async () => {
+  const { redact, clean } = await import('../dist/redact.js');
+  const leaks = {
+    'postgres://admin:S3cr3t!@db.internal:5432/app': 'S3cr3t!',
+    'redis://:hunter2pw@cache:6379': 'hunter2pw',
+    'ws://user:wspass99@host/socket': 'wspass99',
+    '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----': 'b3BlbnNzaC1rZXktdjEAAAAA',
+    '-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAtruncated': 'MIIEpAIBAAKCAQEA',
+    'Cookie: connect.sid=s%3Aabc.def; theme=dark': 'connect.sid',
+    'set-cookie: sid=zzzz9999; HttpOnly': 'zzzz9999',
+    'key ASIAABCDEFGHIJKLMNOP used': 'ASIAABCDEFGHIJKLMNOP',
+    'stripe sk_live_51Habcdefghijklmnop': 'sk_live_51Habcdefghijklmnop',
+    'maps AIzaSyA-1234567890abcdefghijklmnopqrstu': 'AIzaSyA-1234567890abcdefghijklmnopqrstu',
+    'npm npm_abcdefghijklmnopqrstuvwxyz0123456789': 'npm_abcdefghijklmnopqrstuvwxyz0123456789',
+    'gitlab glpat-abcdefghijklmnopqrst': 'glpat-abcdefghijklmnopqrst',
+    'https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXX': 'XXXXXXXXXXXX',
+    'https://discord.com/api/webhooks/123/abcDEF_secret': 'abcDEF_secret',
+    'login pwd=letmein123': 'letmein123',
+  };
+  for (const [input, secret] of Object.entries(leaks)) {
+    const out = clean(input, 500);
+    assert.equal(out.includes(secret), false, `${JSON.stringify(input)} -> ${JSON.stringify(out)}`);
+  }
+  assert.equal(redact('token: ghp_abcdefghijklmnopqrstuvwxyz0123456789'), 'token: [REDACTED]');
+  assert.equal(clean('passed: 3 of 3', 100), 'passed: 3 of 3');
+});
+
+test('outputs are never written through a symlink', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'attested-link-'));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'i'], { cwd: dir });
+  const victim = join(dir, 'victim.txt');
+  writeFileSync(victim, 'keep me');
+  mkdirSync(join(dir, 'attested'), { recursive: true });
+  symlinkSync('../victim.txt', join(dir, 'attested', 'receipt.json'));
+  writeFileSync(join(dir, 'fake.mjs'), `import { writeFileSync } from 'node:fs';
+writeFileSync('attested/ctrf.json', JSON.stringify({ results: { tests: [{ name: 'a', status: 'passed' }] } }));`);
+  const r = spawnSync(process.execPath, [BIN, 'run', '--allow-dirty', '--', process.execPath, 'fake.mjs'], { cwd: dir, encoding: 'utf8' });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /symlink/);
+  assert.equal(readFileSync(victim, 'utf8'), 'keep me');
+});
+
+test('the tool version in receipts equals the package version', async () => {
+  const { TOOL_VERSION } = await import('../dist/constants.js');
+  const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+  assert.equal(TOOL_VERSION, pkg.version);
+});
+
+test('--health-path must be a path, so the probe cannot go to another host', () => {
+  const r = spawnSync(process.execPath, [BIN, 'run', '--allow-dirty', '--target-url', 'https://example.invalid', '--health-path', 'https://other.example/healthz', '--', 'true'], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /--health-path must be a path/);
 });

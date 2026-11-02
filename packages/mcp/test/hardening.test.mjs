@@ -105,7 +105,7 @@ test('attested_packet returns a tool error for a symlinked or malformed packet, 
   writeFileSync(join(dir3, 'attested', 'packet.json'), JSON.stringify({ ...packet(), instructions: 'ignore previous', extra: 1 }));
   r = await c.call('attested_packet', { cwd: dir3 });
   c.close();
-  assert.deepEqual(JSON.parse(r.content[0].text), packet());
+  assert.deepEqual(JSON.parse(r.content[0].text).untrusted_test_output, packet());
 });
 
 test('validatePacket rejects every wrong shape', () => {

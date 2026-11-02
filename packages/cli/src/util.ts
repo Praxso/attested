@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, extname, sep } from 'node:path';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, extname, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export class AttestedError extends Error {}
@@ -17,6 +17,26 @@ function openFile(path: string, what = 'file'): number {
   }
   if (!fstatSync(fd).isFile()) { closeSync(fd); throw new AttestedError(`attested: ${what} ${path} is not a regular file; refusing to read it`); }
   return fd;
+}
+
+// Writes an output file without following a symlink: a committed `attested/receipt.json -> ../elsewhere` (or a
+// symlinked output directory) would otherwise make a run overwrite a file outside the project. The data goes to a
+// fresh temp file in the same directory, then rename() replaces the target itself, never what a link points at.
+export function writeOutput(path: string, data: string): void {
+  const dir = dirname(path);
+  if (isLink(dir)) throw new AttestedError(`attested: output directory ${dir} is a symlink; refusing to write through it`);
+  if (isLink(path)) throw new AttestedError(`attested: output ${path} is a symlink; refusing to write through it`);
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, data, { flag: 'wx' });
+    renameSync(tmp, path);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+function isLink(path: string): boolean {
+  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
 }
 
 // Hashes in chunks, so a large evidence file is never held in memory; refuses files over `max` bytes.

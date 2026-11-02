@@ -191,7 +191,7 @@ export function buildPacket(ctrf: Ctrf, artifacts: Artifact[], cwd: string, reru
     const raw = String(t.trace ?? t.message ?? '').replace(ANSI, '');
     const stack = raw.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('at ')).slice(0, MAX_FRAMES)
       .map((f) => clean(f.split(srcRoot + '/').join(''), MAX_FRAME));
-    const message = clean(t.message ?? '', MAX_MESSAGE);
+    const message = clean(t.message ?? '', MAX_MESSAGE, true);
     const file = typeof t.filePath === 'string' && t.filePath ? clean(relative(srcRoot, t.filePath).split('\\').join('/'), MAX_PATH) : null;
     const evidence: PacketTest['evidence'] = [];
     for (const a of attachmentsOf(t)) {
