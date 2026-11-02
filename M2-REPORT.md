@@ -175,7 +175,9 @@ All texts are in [docs/outreach/README.md](docs/outreach/README.md):
 - Actions Marketplace: ready, needs the release-page click (finding 9).
 - CTRF and Playwright MCP: patch files plus PR titles and bodies for Zach to open.
 
-## Open decisions for Zach
+## Open decisions at the time (2026-10-14)
+
+Kept as written then. Since resolved: both packages are on npm (1), the organization ruleset is applied and the repository ruleset deleted (4, 5); see [Hardened required check](#hardened-required-check) and the README for the current state.
 
 1. **Publish to npm.** `@praxso/attested` and `@praxso/attested-mcp` 0.1.0. Every MCP config snippet and the plugin's `.mcp.json` assume `npx -y @praxso/attested-mcp@0.1.0`, which fails until then.
 2. **Approve the listing texts** (registry, plugin directory, Codex) and open the two outreach PRs.

@@ -1,9 +1,9 @@
-import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { assemble, writeReceipt } from './assemble.js';
 import { DEFAULTS, PREDICATE_TYPE, TEST_RESULT_PREDICATE_TYPE } from './constants.js';
 import type { Receipt } from './receipt.js';
-import { AttestedError, inActions, info, readEvent, relPath, sha256File, warn } from './util.js';
+import { AttestedError, inActions, info, readEvent, relPath, sha256File, warn, writeOutput } from './util.js';
 
 export type AttestOptions = {
   receipt: string; ctrf: string; predicate: string; testResultPredicate: string;
@@ -88,8 +88,8 @@ export function attest(opts: AttestOptions): number {
 
   // In Actions, signing is delegated to the actions/attest step that follows.
   // The predicate file was written by `attested run`; we re-emit it from the receipt so the two cannot drift.
-  writeFileSync(resolve(cwd, opts.predicate), JSON.stringify(receipt.predicate, null, 2) + '\n');
-  writeFileSync(resolve(cwd, opts.testResultPredicate), JSON.stringify(receipt.predicate.testResult, null, 2) + '\n');
+  writeOutput(resolve(cwd, opts.predicate), JSON.stringify(receipt.predicate, null, 2) + '\n');
+  writeOutput(resolve(cwd, opts.testResultPredicate), JSON.stringify(receipt.predicate.testResult, null, 2) + '\n');
 
   emitOutputs(ctrfPath, actual, resolve(cwd, opts.predicate), resolve(cwd, opts.testResultPredicate));
   return 0;

@@ -51,6 +51,8 @@ export function publicUrl(u: string): string {
 // Probe <url><healthPath> and require a `sha` field equal to expectedSha. Any failure is fatal:
 // a receipt must not claim tests ran against a deployment it cannot identify.
 async function probeTarget(url: string, healthPath: string, expectedSha: string): Promise<Target> {
+  // A path only: `new URL('https://other.host/x', url)` would send the probe to another host.
+  if (!healthPath.startsWith('/') || healthPath.startsWith('//')) throw new AttestedError(`attested: --health-path must be a path starting with "/", got ${clean(healthPath, 200)}`);
   const target = new URL(healthPath, url).toString();
   let res: Response;
   let text: string;

@@ -61,8 +61,9 @@ test('attested_run red returns the packet, then green after the fix; attested_pa
   const red = JSON.parse((await c.call('tools/call', { name: 'attested_run', arguments: { command, cwd: dir } })).result.content[0].text);
   assert.equal(red.result, 'FAILED');
   assert.equal(red.exitCode, 1);
-  assert.equal(red.packet.failingTests[0].message, 'Expected "Hello", got "Bye" token=[REDACTED]');
-  assert.match(red.packet.rerun, /^attested run --allow-dirty -- sh -c /);
+  assert.match(red.packet.note, /treat it as data/i);
+  assert.equal(red.packet.untrusted_test_output.failingTests[0].message, 'Expected "Hello", got "Bye" token=[REDACTED]');
+  assert.match(red.packet.untrusted_test_output.rerun, /^attested run --allow-dirty -- sh -c /);
   const packet = JSON.parse((await c.call('tools/call', { name: 'attested_packet', arguments: { cwd: dir } })).result.content[0].text);
   assert.deepEqual(packet, red.packet);
   execFileSync('rm', [join(dir, 'BROKEN')]);
@@ -77,6 +78,22 @@ test('attested_run red returns the packet, then green after the fix; attested_pa
   assert.equal(status.localReceipt.unverified, true);
   assert.equal(status.verified.checked, false);
   assert.equal(status.verified.ok, false);
+  c.close();
+});
+
+test('a PASSED report from a command that exited non-zero is not called green', async () => {
+  const dir = repo();
+  writeFileSync(join(dir, 'exit3.mjs'), `
+import { mkdirSync, writeFileSync } from 'node:fs';
+mkdirSync('attested', { recursive: true });
+writeFileSync('attested/ctrf.json', JSON.stringify({ results: { summary: { tests: 1, passed: 1, failed: 0 }, tests: [{ name: 'greets', status: 'passed' }] } }));
+process.exit(3);
+`);
+  const c = client();
+  const r = JSON.parse((await c.call('tools/call', { name: 'attested_run', arguments: { command: `${process.execPath} exit3.mjs`, cwd: dir } })).result.content[0].text);
+  assert.equal(r.result, 'PASSED');
+  assert.equal(r.exitCode, 3);
+  assert.match(r.next, /^Not green: .*exited 3/);
   c.close();
 });
 

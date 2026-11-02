@@ -144,7 +144,7 @@ export async function check(opts: CheckOptions): Promise<number> {
     status: 'completed',
     conclusion,
     details_url: runUrl() ?? undefined,
-    // Text only. The `images` field is never used: evidence stays in the repo-private workflow artifact (PixelLeak rule).
+    // Text only. The `images` field is never used: evidence stays in the workflow artifact, as visible as the repository's Actions artifacts (PixelLeak rule).
     output: { title, summary },
   };
   const res = await fetch(`${api}/repos/${repo}/check-runs`, {

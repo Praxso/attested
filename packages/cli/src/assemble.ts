@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { buildPacket, serializePacket, type Packet } from './packet.js';
 import { buildReceipt, testResultFromCtrf, toolInfo, validateCtrf, type Artifact, type Ctrf, type Receipt, type ReceiptPredicate } from './receipt.js';
 import { clean } from './redact.js';
-import { AttestedError, checkInside, classify, info, readInside, relPath, runUrl, sha256File, walk } from './util.js';
+import { AttestedError, checkInside, classify, info, readInside, relPath, runUrl, sha256File, walk, writeOutput } from './util.js';
 
 // Largest ctrf.json that is parsed. CTRF for tens of thousands of tests is a few MB.
 export const MAX_CTRF_BYTES = 32 * 1024 * 1024;
@@ -89,7 +89,7 @@ export function writeReceipt(a: Assembled, out: Outputs, rest: Pick<ReceiptPredi
   rmSync(out.packet, { force: true });
   if (a.packet) {
     mkdirSync(dirname(out.packet), { recursive: true });
-    writeFileSync(out.packet, serializePacket(a.packet));
+    writeOutput(out.packet, serializePacket(a.packet));
     // The packet's digest sits next to the evidence it points at.
     artifacts.push({ path: out.packetArtifactPath, ...sha256File(out.packet), kind: 'packet' });
     info(`failure packet: ${out.packetArtifactPath} (${a.packet.failingTests.length} failure groups${a.packet.truncated ? ', truncated' : ''})`);
@@ -105,10 +105,10 @@ export function writeReceipt(a: Assembled, out: Outputs, rest: Pick<ReceiptPredi
   };
   const receipt = buildReceipt(a.subject.sha256, predicate);
   mkdirSync(dirname(out.receipt), { recursive: true });
-  writeFileSync(out.receipt, JSON.stringify(receipt, null, 2) + '\n');
-  writeFileSync(out.predicate, JSON.stringify(predicate, null, 2) + '\n');
+  writeOutput(out.receipt, JSON.stringify(receipt, null, 2) + '\n');
+  writeOutput(out.predicate, JSON.stringify(predicate, null, 2) + '\n');
   // Second, pure in-toto Test Result statement for interoperability.
-  writeFileSync(out.testResultPredicate, JSON.stringify(a.testResult, null, 2) + '\n');
+  writeOutput(out.testResultPredicate, JSON.stringify(a.testResult, null, 2) + '\n');
   const tr = a.testResult;
   info(`receipt: ${relPath(process.cwd(), out.receipt)} (${tr.result}, ${tr.passedTests.length} passed, ${tr.failedTests.length} failed, ${artifacts.length} artifacts)`);
   if (tr.failedTests.length) info(`failed: ${tr.failedTests.join('; ')}`);

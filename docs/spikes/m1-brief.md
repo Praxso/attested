@@ -6,7 +6,7 @@ Time box: 3 working days of agent execution. Stop at the time box and write the 
 
 - An empty public GitHub repository under an organization Zach owns, with Actions enabled. Working name: `prove`. Final name is Zach's call; use the placeholder everywhere so a rename is one commit.
 - A LICENSE file committed by Zach. Working assumption: Apache-2.0. Do not add or change it.
-- Confirmation that the agent may push branches and open PRs in that repository. The agent must not touch `InductAI/induct` or any other repository.
+- Confirmation that the agent may push branches and open PRs in that repository. The agent must not touch any other repository.
 
 ## Goal
 
@@ -14,7 +14,7 @@ Prove, with measured evidence, that a thin CLI can turn an ordinary Playwright r
 
 ## Non-goals for M1
 
-No MCP server, no skill, no check run, no `prove verify` action, no ruleset changes, no failure packet, no ledger, no UI, no multi-framework support beyond what CTRF already gives for free, and no code copied from the Induct repository. Nothing in M1 needs Induct code.
+No MCP server, no skill, no check run, no `prove verify` action, no ruleset changes, no failure packet, no ledger, no UI, no multi-framework support beyond what CTRF already gives for free, and no code copied from any other project.
 
 ## Deliverables
 

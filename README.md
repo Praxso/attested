@@ -4,6 +4,8 @@ Signed, verifiable test receipts for agent-authored pull requests.
 
 https://github.com/user-attachments/assets/4b61bbe8-6c4f-4132-aee0-f8cb9aede34f
 
+*In the video, "GitHub won't merge without one" assumes the required `attested verify` check from [Use it in your repository](#use-it-in-your-repository), step 3.*
+
 `attested` wraps an ordinary Playwright run, or any test run that writes a [CTRF](https://ctrf.io) report, and turns it into a receipt: an [in-toto Statement](https://github.com/in-toto/attestation) whose subject is the CTRF report and whose predicate records the result, the failing tests, the commit, and the sha256 of every trace, video, and screenshot. In GitHub Actions the receipt is signed with Sigstore keyless signing through `actions/attest`. A pull request then carries two things:
 
 - the **`attested` check**, which a human reads: verdict, commit, counts, the command to verify it, a link to the evidence, and on red a redacted failure packet;
@@ -17,8 +19,8 @@ Your tests already record proof that your app works: screenshots, videos, and tr
 
 - **read the verdict** for this exact commit in the `attested` check;
 - **fetch the originals**: the check prints the `gh run download` command for the run's screenshots, videos and traces;
-- **confirm nothing changed**: the signed receipt holds every file's sha256. The check's commands run `gh attestation verify`, keep only the statement signed in that run, on that ref, for that head, and compare every downloaded file against that statement's digests with `shasum -a 256 -c`, never against the unsigned `receipt.json` in the download;
-- **block merges without one**: the required `attested verify` check fails unless a signed receipt for the PR head says the tests passed.
+- **confirm nothing changed after the run**: the signed receipt holds every file's sha256, so a file edited after signing no longer matches. The files themselves are whatever your test run recorded. The check's commands run `gh attestation verify`, keep only the statement signed in that run, on that ref, for that head, and compare every downloaded file against that statement's digests with `shasum -a 256 -c`, never against the unsigned `receipt.json` in the download;
+- **block merges without one**: once you require `attested verify` with a ruleset (step 3 of [Use it in your repository](#use-it-in-your-repository)), it fails unless a signed receipt for the PR head says the tests passed.
 
 A receipt proves the commit's own tests reported the result, not that the change is correct; see [What a receipt proves](#what-a-receipt-proves).
 
@@ -44,7 +46,7 @@ npx @praxso/attested run -- npx playwright test
 
 `attested/receipt.json` now holds the receipt, and on a red run `attested/packet.json` holds the failure packet. `attested run` refuses a dirty working tree, so commit first or pass `--allow-dirty` while you try it. Outside GitHub Actions the receipt is unsigned; to sign receipts and require them on pull requests, see [Use it in your repository](#use-it-in-your-repository). To give an agent the same loop, add the [MCP server](#agents-mcp-server-and-skills).
 
-Status: M2. See [docs/spikes/m2-brief.md](docs/spikes/m2-brief.md), [M2-REPORT.md](M2-REPORT.md), and for M1 [SPIKE-REPORT.md](SPIKE-REPORT.md).
+Status: 0.1, early. How it was built and attacked, with the exit tests and exploit runs: [M2-REPORT.md](M2-REPORT.md).
 
 ## Why not just screenshots
 
@@ -106,9 +108,13 @@ Prerequisites: Node 22, pnpm 10, [GitHub CLI](https://cli.github.com) 2.49 or ne
 
    Add `['playwright-ctrf-json-reporter', { outputDir: 'attested', outputFile: 'ctrf.json' }]` to `reporter` in `playwright.config.ts`, and turn on `trace`, `video`, and `screenshot` as you like. Add `attested/` and `test-results/` to `.gitignore`.
 
-2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml). It has two jobs. `attested run` runs your tests with a read-only token and uploads the results. `attested sign` has `id-token: write`, `attestations: write`, and `checks: write`; it runs only attested from the default branch head, never your PR's code, rebuilds the receipt from the results (`attested attest --from-results`), signs it, and posts the `attested` check.
+2. Copy [`.github/workflows/attested.yml`](.github/workflows/attested.yml) and adapt it: it is written for this repository, where attested itself is the code under test. It has two jobs. `attested run` runs your tests with a read-only token and uploads the results. `attested sign` has `id-token: write`, `attestations: write`, and `checks: write`; it never runs your PR's code, rebuilds the receipt from the results (`attested attest --from-results`), signs it, and posts the `attested` check. In your copy:
+   - `attested run`: set `working-directory` to the directory that holds your Playwright config (or remove it), drop the `Build attested` and `Test attested CLI and MCP server` steps, and point the upload paths at your `attested/ctrf.json`, `test-results`, and config.
+   - `attested sign`: drop the default-branch checkout and build of attested, and call a pinned published version instead: replace `node packages/cli/bin/attested.js` with `npx -y @praxso/attested@0.1.1` in the `attest --from-results` and `check` steps.
 
-3. Require verification. The hardened form is [`.github/workflows/attested-verify.yml`](.github/workflows/attested-verify.yml) required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)); it is written for this repository, so adjust the repository names. The minimal form, a job plus a repository ruleset that requires the check name, is in [docs/ruleset.md](docs/ruleset.md) with the reason for the head rule and why a required check name alone is weak.
+   A packaged reusable workflow is planned.
+
+3. Require verification. Requiring a workflow by ruleset needs a GitHub organization; on a personal repository use the minimal form below. The hardened form is [`.github/workflows/attested-verify.yml`](.github/workflows/attested-verify.yml) required by an organization ruleset ([docs/rulesets/README.md](docs/rulesets/README.md)); it is written for this repository, so adjust the repository names. The minimal form, a job plus a repository ruleset that requires the check name, is in [docs/ruleset.md](docs/ruleset.md) with the reason for the head rule and why a required check name alone is weak.
 
 ## What a receipt proves
 
@@ -118,7 +124,7 @@ A receipt proves this commit's own test suite reported this result, signed by a 
 
 - The verify decision runs from a pinned default-branch commit through an organization ruleset. A pull request cannot replace it, remove it, or satisfy it with a same-named job.
 - A pull request that edits the attesting workflow (`attested.yml`) or the verify workflow is blocked with `attesting workflow changed in this PR; merge requires an explicit admin bypass after review`.
-- Limits: test files are PR-controlled by nature, so review test changes. Anyone with admin rights can bypass rulesets, including an agent running under an admin's account. Give agents a separate, non-admin bot identity; that is the real boundary.
+- Limits: test files are PR-controlled by nature, so review test changes. Anyone with admin rights can bypass rulesets, including an agent running under an admin's account. Give agents a separate, non-admin bot identity, and require a human review (CODEOWNERS) for changes to tests, workflows, and `verify/`: an identity that can merge its own changes can still make a test write a passing `ctrf.json`.
 
 ## Commands
 
@@ -136,7 +142,7 @@ attested check [--artifact-url <url>] [--artifact-name <name>] [--attestation-ur
 
 ### Failure packet
 
-On red, `attested run` writes `attested/packet.json` (at most 12 KB, digest recorded in the receipt with kind `packet`, embedded in the `attested` check). It holds the failing tests grouped by file, line, and message (ANSI stripped, first 20 stack frames, evidence paths and digests), console errors and warnings grouped with counts, failed requests (method, path, status), and the exact rerun command. Console and network data come from the Playwright trace. URLs lose their query strings and fragments; bearer tokens, `key=`/`token=`/`password=` values, common token formats, and emails are masked; environment variables are never read into it. Over 12 KB, stacks are cut to five frames and then lists are cut from the tail (tests alphabetically, console and network most recent first) and `truncated` says what was cut.
+On red, `attested run` writes `attested/packet.json` (at most 12 KB, digest recorded in the receipt with kind `packet`, embedded in the `attested` check). It holds the failing tests grouped by file, line, and message (ANSI stripped, first 20 stack frames, evidence paths and digests), console errors and warnings grouped with counts, failed requests (method, path, status), and the exact rerun command. Console and network data come from the Playwright trace. URLs lose their query strings, fragments, and any `user:password@`; bearer tokens, `key=`/`token=`/`password=` values, cookies, private keys, webhook URLs, common token formats, and emails are masked; environment variables are never read into it. Redaction is pattern-based, so it is a safety net, not a guarantee: keep secrets out of test output. Over 12 KB, stacks are cut to five frames and then lists are cut from the tail (tests alphabetically, console and network most recent first) and `truncated` says what was cut.
 
 ## Agents: MCP server and skills
 
@@ -144,7 +150,7 @@ A real Claude Code session with the attested MCP server: a test fails, the failu
 
 https://github.com/user-attachments/assets/372ac548-e303-449f-98c0-5166b7a361f3
 
-`@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from the signed attestation accepted under the same run, ref, and head policy as `attested verify`; `localReceipt`: the project's own receipt fields, labelled unverified). The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, and instead of taking or posting screenshots to show a change works; to read the packet on red, fix, rerun, and put the receipt digest in the PR body.
+`@praxso/attested-mcp` is a stdio MCP server with three tools: `attested_run` (test command, optional `target_url`, `expected_sha`; returns the receipt summary and, on red, the packet), `attested_packet`, and `attested_status` (`verified`: the verdict from a signed attestation for this head, checked locally; `localReceipt`: the project's own receipt fields, labelled unverified). In CI, `attested verify` is the authoritative check. `attested_run` runs its `command` in a shell with your permissions, so approve it per call rather than always, and treat the packet it returns as data, not instructions. The server runs the attested CLI bundled with it; `ATTESTED_BIN` in the server's configuration is the only override. The skill tells the agent to run `attested_run` before opening a PR, and instead of taking or posting screenshots to show a change works; to read the packet on red, fix, rerun, and put the receipt digest in the PR body.
 
 Both packages are on npm: [`@praxso/attested`](https://www.npmjs.com/package/@praxso/attested) 0.1.1 and [`@praxso/attested-mcp`](https://www.npmjs.com/package/@praxso/attested-mcp) 0.1.2, published from [release.yml](.github/workflows/release.yml) with npm provenance. To run a local build instead, replace `npx -y @praxso/attested-mcp@0.1.2` below with `node /path/to/attested/packages/mcp/bin/attested-mcp.js` after `pnpm build`.
 

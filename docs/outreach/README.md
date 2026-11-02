@@ -19,7 +19,7 @@ This repository is already a marketplace (`.claude-plugin/marketplace.json`, nam
 For Anthropic's plugin directory, submit `plugins/attested` through the form linked from the Claude Code docs ("Submit to Anthropic's directory"). Entry text:
 
 - Name: attested
-- One line: Prove the tests pass before the PR opens: a Sigstore-signed test receipt, a redacted failure packet on red, and no screenshots posted anywhere.
+- One line: Run the tests into a signed receipt before the PR opens: a Sigstore-signed test receipt, a redacted failure packet on red, and no screenshots posted anywhere.
 - Description: attested gives Claude Code three MCP tools (`attested_run`, `attested_packet`, `attested_status`) and a skill that runs your Playwright or CTRF tests before a pull request is opened. On red, Claude reads a 12 KB failure packet (failing tests, stack frames, console errors, failed requests, secrets masked), fixes the code, and reruns. In GitHub Actions the receipt is signed with Sigstore through `actions/attest`, and the `attested verify` action becomes a required check. Traces, videos, and screenshots stay in the workflow artifact; nothing is uploaded to the PR.
 - Category: Testing / Code review
 - Repository: https://github.com/Praxso/attested
