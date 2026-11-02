@@ -45,6 +45,7 @@ jobs:
       - name: Install, build, test
         run: pnpm install --frozen-lockfile && pnpm build && pnpm test
 
+      # Tarball paths start with ./ so npm does not read "dist-release/x.tgz" as a GitHub user/repo shorthand.
       # pnpm pack turns the MCP package's workspace:* dependency into the exact CLI version being released.
       - name: Pack
         id: pack
@@ -57,9 +58,9 @@ jobs:
       - name: Publish @praxso/attested
         run: |
           V="$(node -p "require('./packages/cli/package.json').version")"
-          if npm view "@praxso/attested@$V" version >/dev/null 2>&1; then echo "@praxso/attested@$V already published; skipping"; else npm publish "dist-release/praxso-attested-$V.tgz" --access public; fi
+          if npm view "@praxso/attested@$V" version >/dev/null 2>&1; then echo "@praxso/attested@$V already published; skipping"; else npm publish "./dist-release/praxso-attested-$V.tgz" --access public; fi
 
       - name: Publish @praxso/attested-mcp
         run: |
           V="$(node -p "require('./packages/mcp/package.json').version")"
-          if npm view "@praxso/attested-mcp@$V" version >/dev/null 2>&1; then echo "@praxso/attested-mcp@$V already published; skipping"; else npm publish "dist-release/praxso-attested-mcp-$V.tgz" --access public; fi
+          if npm view "@praxso/attested-mcp@$V" version >/dev/null 2>&1; then echo "@praxso/attested-mcp@$V already published; skipping"; else npm publish "./dist-release/praxso-attested-mcp-$V.tgz" --access public; fi
