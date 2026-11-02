@@ -4,6 +4,8 @@ Signed, verifiable test receipts for agent-authored pull requests.
 
 https://github.com/user-attachments/assets/4b61bbe8-6c4f-4132-aee0-f8cb9aede34f
 
+*In the video, "GitHub won't merge without one" assumes the required `attested verify` check from [Use it in your repository](#use-it-in-your-repository), step 3.*
+
 `attested` wraps an ordinary Playwright run, or any test run that writes a [CTRF](https://ctrf.io) report, and turns it into a receipt: an [in-toto Statement](https://github.com/in-toto/attestation) whose subject is the CTRF report and whose predicate records the result, the failing tests, the commit, and the sha256 of every trace, video, and screenshot. In GitHub Actions the receipt is signed with Sigstore keyless signing through `actions/attest`. A pull request then carries two things:
 
 - the **`attested` check**, which a human reads: verdict, commit, counts, the command to verify it, a link to the evidence, and on red a redacted failure packet;
